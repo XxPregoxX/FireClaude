@@ -1,0 +1,58 @@
+/* Cores do painel e da janelinha de confirmação. Tema: automático (segue o sistema), claro ou escuro
+   (data-tema no <html>, escolhido no botão 🌓 do painel e guardado na extensão). */
+:root {
+  color-scheme: light;
+  --fundo: #faf9f7;
+  --superficie: #ffffff;
+  --texto: #1f1e1d;
+  --suave: #75706a;
+  --borda: #e6e1da;
+  --destaque: #c96442;
+  --destaque-texto: #ffffff;
+  --bolha-user: #efeae3;
+  --codigo: #f3efe9;
+  --cartao: #fff6ec;
+  --cartao-borda: #e3a35f;
+  --perigo: #b93a2b;
+  --ok: #2f7d4f;
+  --link: #2f68b5;
+  --sombra: 0 1px 2px rgba(0, 0, 0, .06), 0 4px 14px rgba(0, 0, 0, .06);
+}
+:root[data-tema="escuro"] {
+  color-scheme: dark;
+  --fundo: #1d1c1b;
+  --superficie: #282725;
+  --texto: #ece8e2;
+  --suave: #a59f97;
+  --borda: #3a3835;
+  --destaque: #d97757;
+  --destaque-texto: #ffffff;
+  --bolha-user: #34322f;
+  --codigo: #242322;
+  --cartao: #382c20;
+  --cartao-borda: #b97a3e;
+  --perigo: #ff8f80;
+  --ok: #7fd3a0;
+  --link: #8fb7ff;
+  --sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 14px rgba(0, 0, 0, .25);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema="claro"]) {
+    color-scheme: dark;
+    --fundo: #1d1c1b;
+    --superficie: #282725;
+    --texto: #ece8e2;
+    --suave: #a59f97;
+    --borda: #3a3835;
+    --destaque: #d97757;
+    --destaque-texto: #ffffff;
+    --bolha-user: #34322f;
+    --codigo: #242322;
+    --cartao: #382c20;
+    --cartao-borda: #b97a3e;
+    --perigo: #ff8f80;
+    --ok: #7fd3a0;
+    --link: #8fb7ff;
+    --sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 14px rgba(0, 0, 0, .25);
+  }
+}

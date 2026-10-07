@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Claude no Firefox: opções</title>
+<style>
+  body { font: 15px system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #222; background: #fff; }
+  @media (prefers-color-scheme: dark) { body { color: #eee; background: #1c1b22; } textarea, input[type=text] { background: #2b2a33; color: #eee; } }
+  textarea { width: 100%; height: 260px; font: 14px monospace; box-sizing: border-box; padding: 8px; }
+  textarea.texto-painel { height: 150px; font: 14px/1.5 system-ui, sans-serif; }
+  input[type=text] { font: 14px monospace; padding: 6px 8px; width: 60%; }
+  button { font-size: 15px; padding: 6px 18px; margin-top: 10px; }
+  #sites { list-style: none; padding: 0; }
+  #sites li { display: flex; align-items: center; gap: 12px; padding: 4px 0; font-family: monospace; }
+  #sites li button { margin: 0; padding: 2px 10px; font-size: 13px; }
+  small { opacity: .75; }
+  .ok { color: #2e9e44; margin-left: 10px; }
+</style>
+</head>
+<body>
+  <h1>Claude no Firefox</h1>
+
+  <h2>Sites permitidos</h2>
+  <p>O Claude só abre, lê e mexe nestes sites. Fora deles a extensão não age, e quem garante isso é o próprio Firefox
+  (são permissões da extensão). Também dá pra adicionar clicando no ícone da extensão numa aba do site.</p>
+  <ul id="sites"></ul>
+  <form id="addForm">
+    <input type="text" id="newSite" placeholder="exemplo.com ou *.exemplo.com" spellcheck="false">
+    <button type="submit">Adicionar</button><span id="addMsg" class="ok"></span>
+  </form>
+  <p><small><code>exemplo.com</code> vale só pra esse endereço; <code>*.exemplo.com</code> inclui os subdomínios.</small></p>
+
+  <h2>Painel lateral (chat)</h2>
+  <p>Pasta de trabalho: <input type="text" id="chatWorkdir" placeholder="~/Documentos/Projetos" spellcheck="false">
+  <span id="dirOk" class="ok"></span></p>
+  <p><small>Depois que o Claude lê uma página, ele cria, edita, move e manda pra lixeira arquivos <strong>dentro desta
+  pasta</strong> sem perguntar (arquivo com ponto, CLAUDE.md e arquivos sensíveis continuam perguntando). Tem que ficar
+  dentro da sua pasta pessoal; vazio = <code>~/Documentos/Projetos</code>.
+  <strong>Não use uma pasta sincronizada ou compartilhada</strong> (Dropbox, Nextcloud, Google Drive): lá, criar um
+  arquivo já é mandar pra fora.</small></p>
+
+  <h3>Jeito de conversar</h3>
+  <p><small>Como o Claude do painel fala com você. Isso só muda o estilo das respostas: as regras de segurança, as
+  confirmações e as permissões continuam iguais. Vale pras <strong>conversas novas</strong> (conversa antiga retomada
+  continua com o texto de quando começou).</small></p>
+  <textarea id="chatEstilo" class="texto-painel" spellcheck="true"></textarea>
+  <h3>Sobre mim</h3>
+  <p><small>Seu contexto e preferências (o que você faz, como gosta das respostas...). Vai junto pro Claude do painel
+  em toda conversa nova.</small></p>
+  <textarea id="chatSobreMim" class="texto-painel" spellcheck="true" placeholder="Ex.: o que você faz, que sistema usa, se prefere respostas curtas."></textarea>
+  <button id="salvarTextos">Salvar textos</button>
+  <button id="restaurarEstilo">Restaurar jeito de conversar padrão</button>
+  <span id="textosOk" class="ok"></span>
+
+  <h2>Aprovação por tarefa</h2>
+  <p>No pedido de confirmação (janelinha, ou cartão na conversa do painel), "Permitir agir em &lt;site&gt;" libera clicar, digitar, escolher opção, apertar teclas e
+  navegar naquele site por <input type="number" id="grantMinutes" min="1" max="120" style="width:4em"> minutos.
+  <span id="minOk" class="ok"></span></p>
+  <p><small>Envio de formulário, download, JavaScript e ir pra outro site continuam perguntando sempre. A aprovação cai antes
+  do tempo se o Claude ler outro site ou usar qualquer ferramenta fora do navegador (terminal, arquivos).</small></p>
+
+  <h2>Rede local</h2>
+  <p><label><input type="checkbox" id="allowPrivate"> Deixar o Claude acessar localhost e a rede local</label></p>
+  <p><small>Desligado por padrão: <code>localhost</code>, IPs privados (127.x, 10.x, 192.168.x...), <code>.local</code> e nomes sem ponto
+  ficam bloqueados mesmo que estejam na lista acima. Isso protege roteador, impressora e servidores rodando na sua máquina.</small></p>
+
+  <h2>Sites proibidos</h2>
+  <p>Um domínio por linha. Vale mesmo se o site estiver na lista de permitidos (subdomínios incluídos).
+  Essa lista só pode ser mudada aqui, pelo Firefox.</p>
+  <textarea id="list" spellcheck="false"></textarea>
+  <button id="save">Salvar</button><span id="ok" class="ok"></span>
+  <p><small>O Claude só age em páginas <code>http</code>/<code>https</code>: <code>file://</code>, <code>about:</code>, <code>data:</code>,
+  páginas de extensões (inclusive esta) etc. ficam sempre de fora.</small></p>
+
+  <h2>Ferramenta javascript</h2>
+  <p><label><input type="checkbox" id="allowJs"> Deixar o Claude rodar JavaScript nas abas liberadas</label></p>
+  <p><small>Desligada por padrão. Quando ligada, o código roda como se fosse script da própria página:
+  vê e mexe em tudo que a página vê (DOM, cookies sem HttpOnly, localStorage, campos de senha preenchidos),
+  mas não tem acesso às APIs da extensão. Sites que proíbem <code>eval</code> pela CSP não aceitam a ferramenta.</small></p>
+  <script src="estilo-padrao.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

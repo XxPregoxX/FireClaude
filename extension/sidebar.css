@@ -1,0 +1,170 @@
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font: 14px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+  color: var(--texto); background: var(--fundo);
+  display: flex; flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+}
+/* Texto da conversa sempre selecionável e copiável. */
+main, .msg, .cartao, #listaHist, #marca { user-select: text; -moz-user-select: text; }
+::selection { background: color-mix(in srgb, var(--destaque) 30%, transparent); }
+
+button {
+  font: inherit; color: var(--texto); background: transparent; border: 1px solid var(--borda);
+  border-radius: 8px; padding: 5px 11px; cursor: pointer; transition: background .15s, border-color .15s;
+}
+button:hover:not(:disabled) { background: var(--bolha-user); }
+button:disabled { opacity: .45; cursor: default; }
+/* Ícones são SVG do mesmo tamanho, centralizados com flex (emoji/caractere desalinha conforme a fonte). */
+.icone {
+  border: none; width: 32px; height: 32px; padding: 0; border-radius: 8px; color: var(--suave); flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.icone:hover:not(:disabled) { color: var(--texto); }
+
+/* ---------- Cabeçalho ---------- */
+header {
+  display: flex; align-items: center; gap: 2px; padding: 6px 8px; min-height: 46px;
+  border-bottom: 1px solid var(--borda); background: var(--fundo);
+}
+#titulo {
+  flex: 1; min-width: 0; font-weight: 600; font-size: 14px; line-height: 20px; padding: 6px 8px; border-radius: 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: text;
+}
+#titulo:hover { background: var(--bolha-user); }
+#titulo input { width: 100%; font: inherit; color: var(--texto); background: var(--superficie); border: 1px solid var(--destaque); border-radius: 6px; padding: 2px 6px; outline: none; }
+
+/* ---------- Histórico ---------- */
+#historico { flex: 1; overflow: auto; padding: 10px; }
+.hist-topo { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin: 2px 2px 10px; }
+#listaHist { list-style: none; margin: 0; padding: 0; }
+#listaHist li {
+  background: var(--superficie); border: 1px solid var(--borda); border-radius: 10px;
+  padding: 8px 10px; margin-bottom: 8px; box-shadow: var(--sombra);
+}
+#listaHist .h-titulo { font-weight: 600; word-break: break-word; }
+#listaHist .h-data { color: var(--suave); font-size: 12px; margin-top: 1px; }
+#listaHist .h-acoes { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+#listaHist .h-acoes button { padding: 2px 10px; font-size: 13px; }
+
+/* ---------- Conversa ---------- */
+main { flex: 1; overflow: auto; padding: 14px 14px 6px; scroll-behavior: smooth; }
+.vazio { color: var(--suave); text-align: center; margin: 18vh auto 0; max-width: 280px; }
+.vazio .logo { font-size: 30px; color: var(--destaque); margin-bottom: 6px; }
+.vazio strong { color: var(--texto); font-size: 16px; }
+.vazio p { margin: 6px 0; }
+
+.msg { margin: 0 0 14px; word-break: break-word; position: relative; }
+.msg.user {
+  background: var(--bolha-user); padding: 8px 12px; border-radius: 14px 14px 4px 14px;
+  white-space: pre-wrap; width: fit-content; max-width: 85%; margin-left: auto;
+}
+.msg.assistant > :first-child { margin-top: 0; }
+.msg.assistant p { margin: .45em 0; }
+.msg.assistant ul, .msg.assistant ol { padding-left: 1.4em; margin: .4em 0; }
+.msg.assistant h1, .msg.assistant h2, .msg.assistant h3 { font-size: 1.08em; margin: .9em 0 .3em; }
+.msg.assistant blockquote { margin: .5em 0; padding: .1em .8em; border-left: 3px solid var(--borda); color: var(--suave); }
+.msg.assistant table { border-collapse: collapse; display: block; overflow-x: auto; margin: .5em 0; font-size: 13px; }
+.msg.assistant th, .msg.assistant td { border: 1px solid var(--borda); padding: 4px 8px; text-align: left; }
+.msg.assistant th { background: var(--codigo); }
+.msg.assistant code { background: var(--codigo); padding: 1px 4px; border-radius: 4px; font-size: 12.5px; font-family: ui-monospace, "JetBrains Mono", "Fira Code", monospace; }
+.msg.assistant a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.msg.assistant hr { border: none; border-top: 1px solid var(--borda); }
+.destino { color: var(--suave); font-size: 11.5px; }
+.img-bloqueada { color: var(--suave); font-style: italic; }
+
+/* Botão "copiar mensagem" aparece ao passar o mouse. */
+.copiar-msg {
+  position: absolute; top: -4px; right: 0; font-size: 12px; padding: 1px 8px;
+  background: var(--superficie); opacity: 0; transition: opacity .15s;
+}
+.msg:hover .copiar-msg, .copiar-msg:focus { opacity: 1; }
+.msg.user .copiar-msg { right: auto; left: -4px; top: -10px; }
+
+.bloco-codigo { position: relative; margin: .5em 0; }
+.bloco-codigo pre {
+  background: var(--codigo); border: 1px solid var(--borda); padding: 10px 12px; border-radius: 10px;
+  overflow-x: auto; margin: 0; font-size: 12.5px; line-height: 1.5;
+}
+.bloco-codigo pre code { background: none; padding: 0; }
+.bloco-codigo .copiar { position: absolute; top: 6px; right: 6px; font-size: 12px; padding: 1px 8px; background: var(--superficie); }
+
+.ferramenta {
+  display: flex; align-items: baseline; gap: 8px; margin: 0 0 10px; padding: 5px 10px;
+  border: 1px solid var(--borda); border-radius: 8px; background: var(--superficie);
+  font-size: 12.5px; color: var(--suave); min-width: 0; cursor: default;
+}
+.ferramenta .f-nome { flex: none; color: var(--texto); font-weight: 500; }
+.ferramenta .f-nome::before { content: "⚙"; margin-right: 6px; color: var(--suave); }
+.ferramenta .f-resumo {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: ui-monospace, monospace; font-size: 11.5px;
+}
+.erro { color: var(--perigo); }
+
+/* Indicador de "pensando". */
+.digitando { display: inline-flex; gap: 4px; margin: 2px 0 12px; }
+.digitando span { width: 6px; height: 6px; border-radius: 50%; background: var(--suave); animation: pulso 1.2s infinite ease-in-out; }
+.digitando span:nth-child(2) { animation-delay: .15s; }
+.digitando span:nth-child(3) { animation-delay: .3s; }
+@keyframes pulso { 0%, 80%, 100% { opacity: .25; transform: scale(.8); } 40% { opacity: 1; transform: scale(1); } }
+
+/* ---------- Cartões de aprovação (só o painel cria; Markdown não gera botão nem esta classe) ---------- */
+.cartao {
+  border: 1px solid var(--cartao-borda); border-left-width: 4px; background: var(--cartao);
+  border-radius: 10px; padding: 10px 12px; margin: 0 0 14px; box-shadow: var(--sombra);
+}
+.cartao .c-titulo { font-weight: 700; margin-bottom: 4px; }
+.cartao .c-aviso { color: var(--perigo); font-weight: 600; margin: 4px 0; }
+.cartao .c-rotulo { color: var(--suave); font-size: 12px; margin-top: 8px; }
+.cartao pre {
+  margin: 2px 0; padding: 6px 8px; background: var(--superficie); border: 1px solid var(--borda); border-radius: 6px;
+  white-space: pre-wrap; word-break: break-all; max-height: 170px; overflow: auto; font-size: 12px;
+  font-family: ui-monospace, monospace;
+}
+.cartao .c-botoes { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.cartao .c-botoes button { background: var(--superficie); }
+.cartao .c-botoes button.permitir { background: var(--destaque); border-color: var(--destaque); color: var(--destaque-texto); }
+.cartao .c-botoes button.permitir:hover:not(:disabled) { filter: brightness(1.08); }
+.cartao .c-resposta { margin-top: 8px; font-weight: 600; }
+.cartao.respondido { opacity: .7; box-shadow: none; }
+
+/* ---------- Rodapé / campo de texto ---------- */
+#marca { font-size: 12px; line-height: 1.45; padding: 6px 14px; border-top: 1px solid var(--borda); color: var(--suave); background: var(--fundo); }
+footer { padding: 8px 10px 10px; background: var(--fundo); }
+.caixa-entrada {
+  display: flex; align-items: flex-end; gap: 8px; padding: 6px 6px 6px 14px;
+  background: var(--superficie); border: 1px solid var(--borda); border-radius: 14px; box-shadow: var(--sombra);
+  transition: border-color .15s;
+}
+.caixa-entrada:focus-within { border-color: var(--destaque); }
+/* Uma linha = 32 px, a mesma altura do botão: texto e botão ficam alinhados. */
+#entrada {
+  flex: 1; min-width: 0; resize: none; border: none; outline: none; background: transparent; color: var(--texto);
+  font: inherit; line-height: 20px; padding: 6px 0; height: 32px; min-height: 32px; max-height: 180px; overflow-y: auto;
+  display: block; margin: 0;
+}
+#entrada::placeholder { color: var(--suave); }
+.enviar {
+  width: 32px; height: 32px; padding: 0; border-radius: 10px; border: none; flex: none;
+  background: var(--destaque); color: var(--destaque-texto);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.enviar[hidden] { display: none; }
+.icone[hidden] { display: none; }
+.enviar:hover:not(:disabled) { background: var(--destaque); filter: brightness(1.08); }
+#btnParar { background: var(--texto); color: var(--fundo); }
+#status { color: var(--suave); font-size: 11.5px; margin: 5px 14px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- Modal ---------- */
+#modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); display: flex; align-items: center; justify-content: center; padding: 14px; }
+#modal[hidden] { display: none; }
+.modal-caixa { background: var(--superficie); border: 1px solid var(--borda); border-radius: 12px; padding: 14px; max-width: 100%; box-shadow: var(--sombra); }
+.modal-caixa p { margin: 0 0 8px; font-weight: 600; }
+.modal-caixa pre { white-space: pre-wrap; word-break: break-all; background: var(--codigo); padding: 8px; border-radius: 6px; font-size: 12px; }
+.modal-botoes { display: flex; gap: 6px; justify-content: flex-end; margin-top: 10px; }
+#modalOk { background: var(--destaque); border-color: var(--destaque); color: var(--destaque-texto); }
+
+/* Rolagem discreta. */
+* { scrollbar-width: thin; scrollbar-color: var(--borda) transparent; }

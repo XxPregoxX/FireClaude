@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Loja teste</title></head><body>
+<h1>Loja</h1>
+<input id="q" placeholder="buscar"><button onclick="document.getElementById('out').textContent='busca: '+q.value">Buscar</button>
+<p id="out"></p>
+<select id="s"><option>Pequeno</option><option>Grande</option></select>
+<a href="/outra.html">Outra página</a>
+<a id="fora" href="http://outro.teste:8765/">Ir pra outro site</a>
+<form id="f" action="/enviado.html"><input name="x" id="fx" placeholder="campo do form"><button id="enviar">Enviar</button></form>
+<form id="f2" action="/enviado.html"><input name="y" id="fy"><button type="button" id="escondido" onclick="this.form.requestSubmit()">Só um botão</button></form>
+<button id="rotulo" aria-label="Cancelar">Confirmar compra</button>
+<button id="sair" onclick="location='http://outro.teste:8765/'">Sair do site</button>
+<a id="cross" href="http://permitido2.teste:8765/">Outro site permitido</a>
+<a id="baixar" href="/arquivo.txt" download>Baixar arquivo</a>
+<a id="anexo" href="/anexo">Abrir anexo</a>
+<script>var segredoDaPagina = 21; console.log("oi do console");</script>
+</body></html>

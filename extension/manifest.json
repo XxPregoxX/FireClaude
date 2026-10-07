@@ -1,0 +1,63 @@
+{
+  "manifest_version": 2,
+  "name": "Claude no Firefox",
+  "version": "0.1.0",
+  "description": "Deixa o Claude Code controlar o Firefox via um servidor MCP local.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "claude-firefox@local",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  },
+  "permissions": [
+    "tabs",
+    "storage",
+    "scripting",
+    "activeTab",
+    "downloads",
+    "nativeMessaging",
+    "clipboardWrite"
+  ],
+  "optional_permissions": [
+    "*://*/*"
+  ],
+  "background": {
+    "scripts": [
+      "estilo-padrao.js",
+      "background.js"
+    ],
+    "persistent": true
+  },
+  "browser_action": {
+    "default_title": "Claude: desconectado",
+    "default_icon": "icon.svg"
+  },
+  "sidebar_action": {
+    "default_title": "Claude",
+    "default_panel": "sidebar.html",
+    "default_icon": "icon.svg",
+    "open_at_install": false
+  },
+  "commands": {
+    "_execute_sidebar_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+C"
+      },
+      "description": "Abrir/fechar o painel do Claude"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "48": "icon.svg",
+    "96": "icon.svg"
+  },
+  "content_security_policy": "default-src 'self'; script-src 'self'; object-src 'none'; img-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:47823; frame-src 'none'; base-uri 'none'; form-action 'none'"
+}

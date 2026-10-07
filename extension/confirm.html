@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Claude quer agir no Firefox</title>
+<link rel="stylesheet" href="tema.css">
+<style>
+  * { box-sizing: border-box; }
+  body { font: 14px/1.55 system-ui, sans-serif; margin: 0; padding: 18px 20px; color: var(--texto); background: var(--fundo); }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .site { margin: 0 0 14px; color: var(--suave); }
+  .site b { font-family: ui-monospace, monospace; font-size: 15px; color: var(--texto); }
+  .aviso { background: var(--cartao); border: 1px solid var(--cartao-borda); border-left-width: 4px; color: var(--perigo);
+           border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; font-weight: 600; }
+  dt { font-size: 12px; color: var(--suave); margin-top: 10px; }
+  dd { margin: 3px 0 0; }
+  pre { margin: 0; padding: 7px 9px; background: var(--superficie); border: 1px solid var(--borda); border-radius: 8px;
+        white-space: pre-wrap; word-break: break-all; max-height: 170px; overflow: auto; font-size: 12.5px;
+        font-family: ui-monospace, monospace; user-select: text; }
+  .nota { font-size: 12px; color: var(--suave); margin-top: 14px; }
+  .botoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  button { font: inherit; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--borda); background: var(--superficie);
+           color: var(--texto); cursor: pointer; }
+  button:hover:not(:disabled) { background: var(--bolha-user); }
+  button:disabled { opacity: .45; cursor: default; }
+  #uma, #janela { background: var(--destaque); border-color: var(--destaque); color: var(--destaque-texto); font-weight: 600; }
+  #uma:hover:not(:disabled), #janela:hover:not(:disabled) { background: var(--destaque); filter: brightness(1.08); }
+</style>
+</head>
+<body>
+  <h1 id="titulo">Carregando…</h1>
+  <p class="site">Site: <b id="host"></b></p>
+  <div id="aviso" class="aviso" hidden></div>
+  <dl id="detalhes"></dl>
+  <p class="nota">Os textos acima vêm da página ou do Claude. Aprove só se for algo que você pediu.
+  Fechar esta janela conta como negar.</p>
+  <div class="botoes">
+    <button id="negar">Negar</button>
+    <button id="uma">Permitir só esta vez</button>
+    <button id="janela" hidden></button>
+  </div>
+  <script src="tema.js"></script>
+  <script src="confirm.js"></script>
+</body>
+</html>

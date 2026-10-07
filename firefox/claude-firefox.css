@@ -1,0 +1,35 @@
+/* claude-firefox: barra lateral do Firefox encostada, sem vão, e sem o cabeçalho duplo no painel do Claude.
+   Instalado por instalar-extensao.sh: este arquivo fica em <perfil>/chrome/ e o userChrome.css o importa.
+   Pra tirar: apague a linha "@import ... claude-firefox.css" do userChrome.css e este arquivo. */
+
+/* Na barra lateral nova o Firefox desenha a caixa com borda, cantos arredondados e um separador de 8px
+   transparente; o fundo da janela aparecia como uma faixa entre a página e o painel. */
+#sidebar-box {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  --sidebar-box-start-start-radius: 0 !important;
+  --sidebar-box-start-end-radius: 0 !important;
+}
+#sidebar-box #sidebar {
+  border-radius: 0 !important;
+}
+#sidebar-splitter {
+  width: 2px !important;
+  min-width: 2px !important;
+  border-inline: none !important;
+  margin: 0 !important;
+  background-color: var(--chrome-content-separator-color, rgba(128, 128, 128, .4)) !important;
+}
+#sidebar-splitter:hover {
+  background-color: var(--focus-outline-color, Highlight) !important;
+}
+
+/* Painéis de extensão (o do Claude é o único em uso): o cabeçalho do Firefox (⌄ ✕) sobra como uma faixa a mais
+   em cima, e o painel do Claude já tem o próprio (título, tema, nova conversa, ✕; Alt+Shift+C também fecha).
+   No Firefox 155 esse cabeçalho é o #sidebar-panel-header do documento webext-panels.xhtml, que não diz de qual
+   extensão é o painel, então vale pra todo painel de extensão (os do Firefox, favoritos/histórico, não mudam). */
+#webextpanels-window #sidebar-panel-header {
+  display: none !important;
+}

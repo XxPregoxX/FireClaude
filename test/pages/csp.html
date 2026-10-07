@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="script-src 'self'">
+<title>Painel com CSP</title></head><body>
+<h1>Painel</h1>
+<table id="precos">
+  <tr><th>Produto</th><th>Preço</th></tr>
+  <tr><td>Caneca</td><td>R$ 30</td></tr>
+  <tr style="display:none"><td>Escondido</td><td>R$ 0</td></tr>
+  <tr><td>Camiseta</td><td>R$ 50</td></tr>
+</table>
+<nav id="menu"><a href="/index.html">Início</a> <a href="http://permitido2.teste:8765/x">Outro site</a> <a href="/oculto" style="display:none">Oculto</a></nav>
+<form id="login" action="/enviado.html">
+  <label for="u">Usuário</label><input id="u" name="usuario" value="fulano">
+  <label for="p">Senha</label><input id="p" name="senha" type="password" value="hunter2-do-html">
+  <label for="p2">Repita</label><input id="p2" name="senha2" type="password">
+  <input type="checkbox" name="lembrar" checked>
+  <select name="plano"><option>Grátis</option><option selected>Pro</option></select>
+  <button>Entrar</button>
+</form>
+<div id="itens"></div>
+<p id="foradapagina" style="position:absolute;left:-9999px">texto-jogado-pra-fora</p>
+<div style="height:3000px"></div><p id="rodape">Rodapé</p>
+<script src="/csp.js"></script>
+</body></html>
