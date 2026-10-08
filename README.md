@@ -50,6 +50,8 @@ Screenshots use a made-up store page and conversation.
 
 ## Installation
 
+> **Linux only for now.** A Windows version is being worked on.
+
 ### Requirements
 
 - Linux with Firefox 142 or newer. Developed and tested on Fedora with Firefox 157.
