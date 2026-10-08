@@ -22,18 +22,80 @@
 
   // Visível de verdade pra uma pessoa olhando a tela. Texto escondido é o lugar clássico de prompt injection.
   function isVisible(el) {
-    if (!el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
+    if (!el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) {
+      return getComputedStyle(el).display === "contents" && visivelSemCaixa(el);
+    }
     if (el.closest("[aria-hidden='true'],[hidden],template,noscript")) return false;
     const st = getComputedStyle(el);
     if (parseFloat(st.fontSize) < 4) return false;
     if (st.clipPath && st.clipPath !== "none" && /inset\(\s*(50%|100%)/.test(st.clipPath)) return false;
     const r = el.getBoundingClientRect();
     if (r.width < 2 && r.height < 2 && !el.firstElementChild) return false;
-    // Jogado pra fora da página (left: -9999px...): coordenada do DOCUMENTO negativa, onde ninguém consegue rolar.
-    // (Coordenada da janela daria falso positivo pra conteúdo que só ficou acima depois de rolar.)
-    if (r.right + scrollX < -1000 || r.bottom + scrollY < -1000) return false;
+    // Jogado pra fora (left: -9999px...): mais de 1000px antes do começo da área onde ele está. A conta só
+    // pela página marcava como escondido o que foi rolado pra cima dentro de uma caixa (chat, LinkedIn, apps).
+    if ((r.right + scrollX < -1000 || r.bottom + scrollY < -1000) && foraDaArea(el, r)) return false;
     if (st.color && st.color === st.backgroundColor && st.color !== "rgba(0, 0, 0, 0)") return false;
     return true;
+  }
+
+  // Elemento sem caixa própria (display: contents; comum em link que embrulha um cartão inteiro): o Firefox diz
+  // que não é visível, mas o que está dentro dele aparece. Visível se nada acima esconde e algum filho aparece.
+  function visivelSemCaixa(el) {
+    if (el.closest("[aria-hidden='true'],[hidden],template,noscript")) return false;
+    if (Array.from(el.children).some(isVisible)) return true;
+    if (!Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && n.textContent.trim())) return false;
+    let caixa = el.parentElement;
+    while (caixa && getComputedStyle(caixa).display === "contents") caixa = caixa.parentElement;
+    return !!caixa && isVisible(caixa);
+  }
+
+  // Texto que aparece de um elemento sem caixa própria (innerText dele traria até o texto escondido).
+  const textoSemCaixa = (el) => clean(Array.from(el.childNodes, (n) =>
+    n.nodeType === Node.TEXT_NODE ? n.textContent : n.nodeType === Node.ELEMENT_NODE && isVisible(n) ? n.innerText : "").join(" "));
+  const semCaixa = (el) => getComputedStyle(el).display === "contents";
+
+  // Pai na árvore que aparece na tela (sai de um shadow root aberto pro host dele).
+  const pai = (el) => el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null);
+
+  function rolavel(el) {
+    if (el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1) return false;
+    const st = getComputedStyle(el);
+    return /(auto|scroll|overlay)/.test(`${st.overflowY} ${st.overflowX}`);
+  }
+
+  // Posição medida dentro da área onde o elemento está: a caixa que rola em volta dele (posição no conteúdo da
+  // caixa, 0 = começo) ou, sem caixa, o documento. A caixa também pode ter sido jogada pra fora: sobe e confere.
+  function foraDaArea(el, r) {
+    for (let c = pai(el); c && c !== document.body && c !== document.documentElement; c = pai(c)) {
+      if (!rolavel(c)) continue;
+      const cr = c.getBoundingClientRect();
+      if (r.bottom - cr.top + c.scrollTop < -1000 || r.right - cr.left + c.scrollLeft < -1000) return true;
+      return foraDaArea(c, cr);
+    }
+    return r.right + scrollX < -1000 || r.bottom + scrollY < -1000;
+  }
+
+  // Caixa que rola o conteúdo principal quando a página em si não rola (apps, chats, LinkedIn): a maior visível.
+  function caixaPrincipal() {
+    let melhor = null;
+    for (const el of document.querySelectorAll("*")) {
+      if (el.scrollHeight > el.clientHeight + 50 && /(auto|scroll|overlay)/.test(getComputedStyle(el).overflowY) &&
+          el.clientHeight * el.clientWidth > (melhor ? melhor.clientHeight * melhor.clientWidth : 0) && el.checkVisibility()) {
+        melhor = el;
+      }
+    }
+    return melhor;
+  }
+  const paginaRola = () => document.scrollingElement.scrollHeight > innerHeight + 5;
+
+  // Seletor curto que acha a caixa de novo (pra usar no scroll), ou null.
+  function seletorDe(el) {
+    const cands = [];
+    if (el.id) cands.push(`#${CSS.escape(el.id)}`);
+    const classes = Array.from(el.classList).slice(0, 3).map((c) => `.${CSS.escape(c)}`).join("");
+    if (classes) cands.push(el.tagName.toLowerCase() + classes);
+    cands.push(el.tagName.toLowerCase());
+    return cands.find((sel) => sel.length <= 200 && document.querySelector(sel) === el) || null;
   }
 
   const INTERACTIVE_ROLES = new Set([
@@ -61,20 +123,57 @@
       if (clean(t)) return clean(t);
     }
     if (el.labels && el.labels.length) return clean(el.labels[0].innerText);
-    const txt = clean(el.innerText);
+    const txt = semCaixa(el) ? textoSemCaixa(el) : clean(el.innerText);
     if (txt) return txt;
     return clean(el.getAttribute("title") || el.getAttribute("placeholder") || el.getAttribute("alt") || "");
   }
 
-  function describe(el) {
+  // Endereço do link em formato curto: sem parâmetros de rastreio, só o caminho quando é do mesmo site, e nada
+  // quando é a própria página (âncora). O navigate aceita caminho relativo à página da aba.
+  const RASTREIO = /^(utm_\w+|fbclid|gclid|dclid|igshid|mc_cid|mc_eid|_hsenc|_hsmi|trk|trkInfo|lipi|trackingId|refId)$/i;
+  function enderecoCurto(href) {
+    let u;
+    try {
+      u = new URL(href);
+    } catch (_) {
+      return href;
+    }
+    if (u.protocol !== "http:" && u.protocol !== "https:") return href;
+    // Filtra no texto da query (mantém a codificação original do resto).
+    if (u.search) {
+      const resto = u.search.slice(1).split("&").filter((par) => {
+        let k = par.split("=")[0];
+        try {
+          k = decodeURIComponent(k);
+        } catch (_) {}
+        return !RASTREIO.test(k);
+      });
+      u.search = resto.length ? `?${resto.join("&")}` : "";
+    }
+    const aqui = new URL(location.href);
+    const rotaNoHash = /^#[!/]/.test(u.hash);
+    if (u.origin === aqui.origin && u.pathname === aqui.pathname && u.search === aqui.search && !rotaNoHash) return null;
+    return u.origin === aqui.origin ? u.pathname + u.search + u.hash : u.href;
+  }
+
+  // Imagem que não diz nada (ícone, selo, estrela...) não entra no texto.
+  const IMG_DECORATIVA = /^[\w-]*(icon|label|logo|overlay|star|badge|flag|spinner|placeholder|avatar)[\w-]*$/i;
+
+  // Campo de texto entra inteiro até este tamanho (o read_page ainda corta o total no maxChars).
+  const LIMITE_CAMPO = 20000;
+
+  // curto: o read_page vai entrar no elemento e mostrar o conteúdo, então o nome fica só como etiqueta.
+  function describe(el, { curto = false } = {}) {
     const tag = el.tagName;
     const role = el.getAttribute("role");
-    const name = accName(el).slice(0, 150);
+    const nome = accName(el);
+    const name = curto && nome.length > 80 ? `${nome.slice(0, 80)}…` : nome.slice(0, 150);
     let kind = role || tag.toLowerCase();
     let extra = "";
     if (tag === "A") {
       kind = "link";
-      extra = ` -> ${el.href}`;
+      const alvo = enderecoCurto(el.href);
+      extra = alvo ? ` -> ${alvo}` : "";
     } else if (tag === "INPUT") {
       const t = el.type;
       if (t === "checkbox" || t === "radio") {
@@ -84,13 +183,14 @@
         kind = "button";
       } else {
         kind = `input:${t}`;
-        const v = t === "password" ? (el.value ? "••••" : "") : clean(el.value).slice(0, 200);
+        const v = t === "password" ? (el.value ? "••••" : "") : clean(el.value).slice(0, 2000);
         if (v) extra = ` value="${v}"`;
         if (el.placeholder && name !== clean(el.placeholder)) extra += ` placeholder="${clean(el.placeholder)}"`;
       }
     } else if (tag === "TEXTAREA") {
       kind = "textarea";
-      const v = clean(el.value).slice(0, 300);
+      // Mantém as quebras de linha (texto de prompt, mensagem); só tira caractere invisível.
+      const v = String(el.value || "").replace(SNEAKY, "").slice(0, LIMITE_CAMPO);
       if (v) extra = ` value="${v}"`;
     } else if (tag === "SELECT") {
       kind = "select";
@@ -100,11 +200,35 @@
       kind = "editável";
     }
     if (el.disabled) extra += " [desabilitado]";
-    return `[ref=${refFor(el)}] ${kind} "${name}"${extra}`;
+    return `[ref=${refFor(el)}] ${kind}${name ? ` "${name}"` : ""}${extra}`;
+  }
+
+  // Elemento interativo que tem conteúdo de verdade dentro (editor de texto, cartão clicável, item de lista que é
+  // um botão): o read_page lista o elemento e também entra nele (texto e os interativos de dentro).
+  const DENTRO_INTERATIVO = "a[href],button,input,select,textarea,[role=button],[role=link],[role=checkbox],[role=tab],[contenteditable=''],[contenteditable=true]";
+  function entraNoInterativo(el) {
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return false;
+    if (el.isContentEditable) return true;
+    return clean(el.innerText).length > 150 || !!el.querySelector(DENTRO_INTERATIVO);
   }
 
   const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "SVG", "CANVAS", "HEAD", "META", "LINK"]);
   const BLOCK_DISPLAY = /^(block|flex|grid|list-item|table|table-row|table-cell|flow-root)/;
+
+  // Tira o que só repete: texto alternativo de imagem que já está escrito na mesma linha ou na vizinha (vitrine de
+  // loja repete o nome do produto na imagem e no título) e linha idêntica à anterior.
+  function enxugar(lines) {
+    const out = [];
+    lines.forEach((linha, i) => {
+      const l = linha.replace(/\[imagem: ([^\]]+)\]\s*/g, (m, alt) => {
+        const k = alt.slice(0, 50);
+        const fora = linha.replace(m, "");
+        return fora.includes(k) || (lines[i + 1] || "").includes(k) || (lines[i - 1] || "").includes(k) ? "" : m;
+      }).trim();
+      if (l && out[out.length - 1] !== l) out.push(l);
+    });
+    return out;
+  }
 
   function readPage({ filter = "all", maxChars = 40000 } = {}) {
     const lines = [];
@@ -128,8 +252,16 @@
         if (child.nodeType !== Node.ELEMENT_NODE) continue;
         const el = child;
         if (SKIP_TAGS.has(el.tagName.toUpperCase())) continue;
-        if (getComputedStyle(el).display === "contents") {
-          walk(el);
+        if (semCaixa(el)) {
+          // Link/botão sem caixa própria: entra na lista (com o endereço) e o conteúdo vem logo abaixo.
+          if (isInteractive(el) && isVisible(el)) {
+            flush();
+            lines.push(describe(el, { curto: true }));
+            walk(el);
+            flush();
+          } else {
+            walk(el);
+          }
           continue;
         }
         if (!isVisible(el)) {
@@ -144,7 +276,12 @@
         }
         if (isInteractive(el)) {
           flush();
-          lines.push(describe(el));
+          const entra = entraNoInterativo(el);
+          lines.push(describe(el, { curto: entra }));
+          if (entra) {
+            walk(el.shadowRoot || el);
+            flush();
+          }
           continue;
         }
         const h = /^H([1-6])$/.exec(el.tagName);
@@ -156,7 +293,7 @@
         }
         if (el.tagName === "IMG") {
           const alt = clean(el.alt);
-          if (alt && filter === "all") buf.push(`[imagem: ${alt}]`);
+          if (alt && filter === "all" && !IMG_DECORATIVA.test(alt)) buf.push(`[imagem: ${alt}]`);
           continue;
         }
         const block = BLOCK_DISPLAY.test(getComputedStyle(el).display);
@@ -169,17 +306,24 @@
     walk(document.body || document.documentElement);
     flush();
 
-    let text = lines.join("\n");
+    let text = enxugar(lines).join("\n");
     let truncated = false;
     if (text.length > maxChars) {
       text = text.slice(0, maxChars);
       truncated = true;
+    }
+    // Página que não rola sozinha: mostra a rolagem da caixa principal (senão o Claude via 0/0 e achava que era tudo).
+    let caixa = null;
+    if (!paginaRola()) {
+      const c = caixaPrincipal();
+      if (c) caixa = { y: Math.round(c.scrollTop), max: c.scrollHeight - c.clientHeight, seletor: seletorDe(c) };
     }
     return {
       title: clean(document.title),
       url: location.href,
       viewport: { w: innerWidth, h: innerHeight },
       scroll: { y: Math.round(scrollY), max: Math.max(0, document.documentElement.scrollHeight - innerHeight) },
+      caixa,
       hiddenBlocksSkipped: hidden,
       truncated,
       text,
@@ -210,8 +354,10 @@
 
   function click(args) {
     const el = resolve(args);
-    if (args.x == null) el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
-    const r = el.getBoundingClientRect();
+    // Sem caixa própria (display: contents): mira no primeiro filho que aparece.
+    const alvo = semCaixa(el) ? Array.from(el.children).find(isVisible) || el : el;
+    if (args.x == null) alvo.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+    const r = alvo.getBoundingClientRect();
     const cx = args.x ?? r.left + r.width / 2;
     const cy = args.y ?? r.top + r.height / 2;
     for (const t of ["pointerover", "pointerenter", "mouseover", "pointerdown", "mousedown"]) mouse(el, t, cx, cy);
@@ -271,11 +417,15 @@
     return { key, target: el === document.body ? "body" : describe(el) };
   }
 
-  function scroll({ direction = "down", amount, ref, selector, pixels }) {
+  function scroll({ direction, amount, ref, selector, pixels }) {
+    const distancia = direction != null || amount != null || pixels != null;
+    let el = null;
     if (ref != null || selector) {
-      const el = resolve({ ref, selector });
-      el.scrollIntoView({ block: "center", behavior: "instant" });
-      return { scrolledTo: describe(el), y: Math.round(scrollY) };
+      el = resolve({ ref, selector });
+      if (!distancia) {
+        el.scrollIntoView({ block: "center", behavior: "instant" });
+        return { scrolledTo: describe(el), y: Math.round(scrollY) };
+      }
     }
     let px;
     if (pixels != null) {
@@ -283,21 +433,12 @@
       if (!Number.isFinite(px)) throw new Error("pixels tem que ser um número.");
       px = Math.max(-100000, Math.min(100000, px));
     } else {
-      px = (amount ?? 0.8) * innerHeight * (direction === "up" ? -1 : 1);
+      px = (amount ?? 0.8) * (el ? el.clientHeight : innerHeight) * (direction === "up" ? -1 : 1);
     }
-    // Página que rola num container interno: pega o maior elemento rolável.
-    let target = document.scrollingElement;
-    if (target.scrollHeight <= innerHeight + 5) {
-      let best = null;
-      for (const el of document.querySelectorAll("*")) {
-        if (el.scrollHeight > el.clientHeight + 50 && /(auto|scroll)/.test(getComputedStyle(el).overflowY)) {
-          if (!best || el.clientHeight * el.clientWidth > best.clientHeight * best.clientWidth) best = el;
-        }
-      }
-      if (best) target = best;
-    }
+    // Com selector/ref + distância: rola aquela caixa. Sem: a página, ou a caixa principal se a página não rola.
+    const target = el || (paginaRola() ? document.scrollingElement : caixaPrincipal() || document.scrollingElement);
     target.scrollBy({ top: px, behavior: "instant" });
-    return { y: Math.round(target.scrollTop), max: target.scrollHeight - target.clientHeight };
+    return { y: Math.round(target.scrollTop), max: target.scrollHeight - target.clientHeight, ...(el ? { caixa: describe(el) } : {}) };
   }
 
   function selectOption({ ref, selector, value }) {
@@ -328,7 +469,7 @@
       const label = el.labels && el.labels.length ? clean(el.labels[0].innerText) : "";
       return [label, clean(el.placeholder || "")].filter(Boolean).join(" / ");
     }
-    return clean(el.innerText || "");
+    return semCaixa(el) ? textoSemCaixa(el) : clean(el.innerText || "");
   }
 
   function inspect(args) {
@@ -430,7 +571,7 @@
     const elementos = all.slice(0, clampInt(limit, 20, 1, 200)).map((el) => {
       const visivel = isVisible(el);
       const item = { tag: el.tagName.toLowerCase(), visivel };
-      if (visivel) item.texto = clean(el.innerText).slice(0, 500); // texto escondido fica de fora, como no read_page
+      if (visivel) item.texto = (semCaixa(el) ? textoSemCaixa(el) : clean(el.innerText)).slice(0, 500); // texto escondido fica de fora, como no read_page
       if (attributes.length) {
         item.atributos = {};
         for (const a of attributes) {
@@ -445,7 +586,16 @@
       }
       return item;
     });
-    return { total: all.length, mostrados: elementos.length, elementos };
+    const out = { total: all.length, mostrados: elementos.length, elementos };
+    if (!all.length) out.motivo = `Nenhum elemento casa com o seletor nesta página.${notaFrames()}`;
+    else if (!all.some((el) => isVisible(el))) out.motivo = `Os ${all.length} elementos que casam estão escondidos (invisíveis, fora da tela ou sem tamanho); o texto deles não é mostrado.`;
+    return out;
+  }
+
+  // Conteúdo que as ferramentas não alcançam, pra explicar resultado vazio.
+  function notaFrames() {
+    const n = document.querySelectorAll("iframe, frame").length;
+    return n ? ` A página tem ${n} iframe(s); o conteúdo de iframe não é lido.` : "";
   }
 
   function extrairTabela({ selector }) {
@@ -482,14 +632,22 @@
         if (links.length < 300) links.push({ texto: visibleText(a).slice(0, 200), href: a.href });
       }
     }
-    return { links, total: vistos.size, ocultosIgnorados: ocultos };
+    const out = { links, total: vistos.size, ocultosIgnorados: ocultos };
+    if (!links.length) {
+      out.motivo = selector && !roots.length ? `Nenhum elemento casa com o seletor ${selector}.`
+        : !vistos.size ? "Não há nenhum <a href> aqui: os itens podem ser botões ou elementos clicáveis sem link (veja os [ref] no read_page)." + notaFrames()
+        : `Os ${vistos.size} links estão escondidos (invisíveis, fora da tela ou sem tamanho).`;
+    }
+    return out;
   }
 
   function estadoFormulario({ selector }) {
     const el = selectAll(selector)[0];
     if (!el) throw new Error(`Nenhum elemento casa com o seletor ${selector}`);
     const form = el.tagName === "FORM" ? el : el.closest("form") || el;
-    const fields = form.tagName === "FORM" ? Array.from(form.elements) : selectAll("input, select, textarea, button", form);
+    const CAMPOS = "input, select, textarea, button";
+    // Fora de <form>: os campos dentro do elemento, ou o próprio elemento se ele já é um campo.
+    const fields = form.tagName === "FORM" ? Array.from(form.elements) : [...(form.matches(CAMPOS) ? [form] : []), ...selectAll(CAMPOS, form)];
     const campos = fields.slice(0, 200).map((f) => {
       const c = { tag: f.tagName.toLowerCase(), tipo: f.type || "", nome: f.name || "", id: f.id || "" };
       if (f.labels && f.labels.length) c.rotulo = clean(f.labels[0].innerText).slice(0, 200);
@@ -501,10 +659,46 @@
       if (!isVisible(f)) c.visivel = false;
       return c;
     });
-    return { formulario: form.tagName === "FORM" ? { acao: form.action, metodo: form.method } : null, campos };
+    const out = { formulario: form.tagName === "FORM" ? { acao: form.action, metodo: form.method } : null, campos };
+    if (!campos.length) out.motivo = "O elemento não é um formulário nem tem campos (input, select, textarea, button) dentro. Campo editável (contenteditable) aparece no read_page como \"editável\".";
+    return out;
   }
 
-  function esperarPor({ selector, timeout = 10 }) {
+  // Elemento com conteúdo de verdade: texto, campo, imagem/mídia (dele ou dentro dele). Caixa vazia com altura
+  // e fundo cinza é o "esqueleto" que site mostra enquanto carrega.
+  const MIDIA = "img,svg,video,canvas,iframe,input,textarea,select,picture,object,embed";
+  const temConteudo = (el) => !!clean(el.innerText) || el.matches(MIDIA) || !!el.querySelector(MIDIA);
+
+  // Esqueleto/indicador de carregamento visível na página.
+  const ESQUELETO = '[aria-busy="true"],[class*="skeleton" i],[class*="shimmer" i]';
+  const temEsqueleto = () => Array.from(document.querySelectorAll(ESQUELETO)).slice(0, 200).some((e) => e.checkVisibility());
+
+  // Espera a página assentar depois de carregar: ~1 s depois do load (conteúdo que vem por fetch chega logo
+  // depois), 600 ms sem mudança no DOM e nenhum esqueleto de carregamento visível. Para em maxMs de qualquer jeito.
+  function assentar({ maxMs = 4000 } = {}) {
+    const limite = clampInt(maxMs, 4000, 0, 10000);
+    const inicio = performance.now();
+    const nav = performance.getEntriesByType("navigation")[0];
+    const desdeLoad = nav?.loadEventEnd ? inicio - nav.loadEventEnd : Infinity;
+    const minimo = Math.max(0, 1000 - desdeLoad);
+    let ultima = inicio;
+    const obs = new MutationObserver(() => (ultima = performance.now()));
+    obs.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    return new Promise((resolveP) => {
+      const tick = () => {
+        const agora = performance.now();
+        const ok = agora - inicio >= minimo && agora - ultima >= 600 && !temEsqueleto();
+        if (ok || agora - inicio >= limite) {
+          obs.disconnect();
+          return resolveP({ ms: Math.round(agora - inicio), assentou: ok });
+        }
+        setTimeout(tick, 100);
+      };
+      tick();
+    });
+  }
+
+  function esperarPor({ selector, timeout = 10, vazio = false }) {
     selectAll(selector); // seletor inválido falha já
     const limite = clampInt(Number(timeout) * 1000, 10000, 0, 30000);
     const inicio = Date.now();
@@ -512,10 +706,20 @@
       const tick = () => {
         let el;
         try {
-          el = selectAll(selector).find((e) => isVisible(e));
+          el = selectAll(selector).find((e) => isVisible(e) && (vazio || temConteudo(e)));
         } catch (_) {}
         if (el) return resolveP({ apareceu: true, depoisDeMs: Date.now() - inicio, elemento: describe(el) });
-        if (Date.now() - inicio >= limite) return resolveP({ apareceu: false, depoisDeMs: Date.now() - inicio });
+        if (Date.now() - inicio >= limite) {
+          let todos = [];
+          try {
+            todos = selectAll(selector);
+          } catch (_) {}
+          const visiveis = todos.filter((e) => isVisible(e));
+          const motivo = !todos.length ? `nenhum elemento casou com o seletor em ${Math.round(limite / 1000)} s.${notaFrames()}`
+            : !visiveis.length ? `${todos.length} elemento(s) casam, mas estão escondidos.`
+            : `${visiveis.length} elemento(s) casam e estão visíveis, mas vazios (esqueleto de carregamento?). Se vazio basta, use vazio=true.`;
+          return resolveP({ apareceu: false, depoisDeMs: Date.now() - inicio, motivo });
+        }
         setTimeout(tick, 150);
       };
       tick();
@@ -523,7 +727,7 @@
   }
 
   const TOOLS = {
-    readPage, scroll, consoleLogs, inspect, submitPending, query, extrairTabela, extrairLinks, estadoFormulario, esperarPor,
+    readPage, scroll, consoleLogs, inspect, submitPending, query, extrairTabela, extrairLinks, estadoFormulario, esperarPor, assentar,
     click: guarded(click), type: guarded(type), pressKey: guarded((a) => pressKey(a)), selectOption: guarded(selectOption),
   };
   globalThis.__claudeTools = TOOLS;

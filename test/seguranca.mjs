@@ -129,7 +129,8 @@ await funciona("tab_close continua funcionando nela", "tab_close", { tabId: loja
 
 console.log("\n# Print (activeTab) e javascript desligado");
 const loja2 = abaDe((await call("tab_new", { url: LOJA })).text);
-const shot = await bloqueia("screenshot sem clique do usuário pede pra avisar", "screenshot", { tabId: loja2 }, /PRECISA DO USUÁRIO[\s\S]*ícone[\s\S]*📷/);
+const shot = await bloqueia("screenshot sem gesto do usuário pede pra avisar (atalho ou menu do ícone)", "screenshot", { tabId: loja2 },
+  /PRECISA DO USUÁRIO[\s\S]*Alt\+Shift\+P[\s\S]*Claude pode tirar print desta página[\s\S]*📷/);
 // M4: erro vem dentro do bloco não confiável; a instrução pro Claude vem depois dele, de texto fixo do servidor.
 const depois = (t) => t.split(/<<<FIM_CONTEUDO_EXTERNO \w+>>>/)[1] || "";
 check("erro vem marcado como conteúdo não confiável", /<<<CONTEUDO_EXTERNO \w+>>>[\s\S]*PRECISA DO USUÁRIO[\s\S]*<<<FIM_CONTEUDO_EXTERNO/.test(shot.text), shot.text);
@@ -337,8 +338,8 @@ await le("read_page depois de rolar até o fim ainda vê o topo", "read_page", {
 q = await le("query em elemento jogado pra fora da página", "query", { selector: "#foradapagina" }, /"visivel": false/);
 check("...continua tratado como escondido (sem texto)", !/texto-jogado-pra-fora/.test(q.text), q.text);
 ({ r } = await comRespostas(["once"], () => call("navigate", { tabId: cspTab, url: "reload" })));
-let ep = await le("esperar_por: elemento que aparece depois de 1,5 s", "esperar_por", { selector: "#atrasado", timeout: 5 }, /"apareceu": true/);
-check("esperar_por esperou de verdade", Number(/"depoisDeMs": (\d+)/.exec(ep.text)?.[1]) > 300, ep.text);
+await le("esperar_por: elemento que aparece depois de 1,5 s", "esperar_por", { selector: "#atrasado", timeout: 5 }, /"apareceu": true/);
+// (quanto tempo esperou depende de o reload já ter esperado a página assentar; a espera é testada no leitura.mjs)
 await le("esperar_por: timeout", "esperar_por", { selector: "#nunca", timeout: 1 }, /"apareceu": false/);
 const grande = await le("query com resultado grande", "query", { selector: ".item", limit: 200 });
 check("resultado grande é cortado com aviso fora do bloco", /Resultado cortado/.test(depois(grande.text)), grande.text.slice(-300));

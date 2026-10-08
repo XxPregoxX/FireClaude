@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Carrega depois</title>
+<style>.skeleton { height: 20px; background: #ddd; margin: 4px 0; } #lista2 li:empty { height: 20px; background: #eee; }</style>
+</head><body>
+<h1>Resultados</h1>
+<ul id="lista"><li class="item skeleton"></li><li class="item skeleton"></li><li class="item skeleton"></li></ul>
+<ul id="lista2"><li></li><li></li></ul>
+<script>
+  // Como num site de busca: esqueleto cinza primeiro, produtos 1,5 s depois do load; outra lista bem depois.
+  setTimeout(() => {
+    document.getElementById("lista").innerHTML = [1, 2, 3, 4, 5].map((i) => `<li class="item">produto ${i}</li>`).join("");
+  }, 1500);
+  setTimeout(() => {
+    document.getElementById("lista2").innerHTML = "<li>item tardio</li>";
+  }, 4500);
+</script>
+</body></html>

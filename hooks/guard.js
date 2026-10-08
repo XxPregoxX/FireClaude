@@ -341,6 +341,21 @@ function hostsFrom(taintFile) {
 
 const ask = (reason) => ({ decision: "ask", reason });
 
+// Saídas grandes que o programa do painel guardou (o Claude recebeu só um resumo do modelo auxiliar): ler com Read é
+// livre. São saídas que a própria conversa já produziu; nada novo entra. Só Read, só arquivo comum com o nome que o
+// painel gera, direto nessa pasta (sem symlink pra fora).
+const NOME_SAIDA = /^saida-[0-9a-f]{16}\.txt$/;
+export function isLeituraDeSaida(tool, input, taintDir) {
+  if (tool !== "Read" || typeof input?.file_path !== "string" || !path.isAbsolute(input.file_path)) return false;
+  try {
+    const pasta = fs.realpathSync(path.join(taintDir, "saidas"));
+    const real = fs.realpathSync(input.file_path);
+    return path.dirname(real) === pasta && NOME_SAIDA.test(path.basename(real)) && fs.statSync(real).isFile();
+  } catch {
+    return false;
+  }
+}
+
 export function decide({ raw, pid, dir: taintDir, projectDir, chat = false }) {
   let input;
   try {
@@ -374,6 +389,9 @@ export function decide({ raw, pid, dir: taintDir, projectDir, chat = false }) {
     // (no modo padrão ele pergunta toda edição), e a regra combinada é não perguntar.
     if (isReadOnlyInProject(tool, input.tool_input, input.cwd, root) || isFileOpInWorkdir(tool, input.tool_input, input.cwd, root)) {
       return { decision: "allow", reason: "Claude no Firefox: dentro da pasta de trabalho, sem arquivo protegido." };
+    }
+    if (isLeituraDeSaida(tool, input.tool_input, taintDir)) {
+      return { decision: "allow", reason: "Claude no Firefox: saída completa de um comando desta conversa (o resumo já veio)." };
     }
   } else if (isReadOnlyInProject(tool, input.tool_input, input.cwd, root)) {
     return null;

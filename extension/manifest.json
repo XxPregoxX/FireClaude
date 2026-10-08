@@ -21,7 +21,8 @@
     "activeTab",
     "downloads",
     "nativeMessaging",
-    "clipboardWrite"
+    "clipboardWrite",
+    "menus"
   ],
   "optional_permissions": [
     "*://*/*"
@@ -44,11 +45,17 @@
     "open_at_install": false
   },
   "commands": {
-    "_execute_sidebar_action": {
+    "abrir-painel": {
       "suggested_key": {
         "default": "Alt+Shift+C"
       },
-      "description": "Abrir/fechar o painel do Claude"
+      "description": "Abrir/fechar o painel do Claude (também libera o print da página da frente)"
+    },
+    "liberar-print": {
+      "suggested_key": {
+        "default": "Alt+Shift+P"
+      },
+      "description": "Deixar o Claude tirar print da página da frente (vale até ela mudar)"
     }
   },
   "options_ui": {

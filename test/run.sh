@@ -30,6 +30,11 @@ node test/guard.mjs >"$TMP/guard.log" || { cat "$TMP/guard.log"; exit 1; }
 echo "trava: $(tail -1 "$TMP/guard.log")"
 node test/chat-host.mjs >"$TMP/chat.log" || { cat "$TMP/chat.log"; exit 1; }
 echo "programa do painel: $(tail -1 "$TMP/chat.log")"
+node test/worker.mjs >"$TMP/worker.log" || { cat "$TMP/worker.log"; exit 1; }
+echo "modelo auxiliar: $(tail -1 "$TMP/worker.log")"
+# CSS: comentário no meio de uma lista de seletores ("a, /* … */ b { … }") junta regras sem querer (já tirou a conversa
+# da tela uma vez).
+if grep -nPzo ',\s*/\*' extension/*.css >/dev/null; then echo "CSS: comentário dentro de lista de seletores"; grep -nP ',\s*/\*' extension/*.css; exit 1; fi
 
 # Token e perfil só do teste: o servidor lê o token daqui e o UUID da extensão do prefs.js deste perfil.
 export CLAUDE_FIREFOX_TOKEN_FILE="$TMP/token" CLAUDE_FIREFOX_PROFILE="$TMP/profile"
@@ -64,6 +69,7 @@ export CLAUDE_FIREFOX_PORT=47899 XDG_RUNTIME_DIR="$TMP/run" DOWNLOAD_DIR="$TMP/d
 node test/seguranca.mjs # sobe o servidor das páginas de teste na 8765
 node test/ponte.mjs     # autenticação da ponte WebSocket (M1)
 node test/painel.mjs    # painel lateral: ponte nativa, confirmações na conversa, Markdown seguro
+node test/leitura.mjs   # leitura de páginas modernas: caixa de rolagem, editável, carregamento, shadow DOM
 if [ "${1:-}" = e2e ]; then
   python3 -m http.server 8765 -b 127.0.0.1 -d test/pages >/dev/null 2>&1 &
   HTTP=$!

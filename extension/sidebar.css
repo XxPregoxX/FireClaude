@@ -3,7 +3,7 @@ html, body { height: 100%; margin: 0; }
 body {
   font: 14px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
   color: var(--texto); background: var(--fundo);
-  display: flex; flex-direction: column;
+  display: flex; flex-direction: column; position: relative;
   -webkit-font-smoothing: antialiased;
 }
 /* Texto da conversa sempre selecionável e copiável. */
@@ -35,9 +35,48 @@ header {
 #titulo:hover { background: var(--bolha-user); }
 #titulo input { width: 100%; font: inherit; color: var(--texto); background: var(--superficie); border: 1px solid var(--destaque); border-radius: 6px; padding: 2px 6px; outline: none; }
 
+/* ☰ das conversas: vira X com a lista aberta. Tudo dura o mesmo (0,16 s) e começa junto:
+   - as linhas de cima e de baixo giram até ficar exatamente no lugar do ✕ de fechar (mesmo tamanho: 16 -> 16,97 px);
+     a do meio some na hora ao abrir e volta no fim ao fechar;
+   - quando o giro termina, troca pelo X fixo (igual ao ✕), sem transformação: o Firefox desenha linha girada um pouco
+     diferente (parecia mais grossa) até largar a camada da animação;
+   - a linha de baixo do cabeçalho some embaixo do botão da esquerda pra direita, enquanto a linha vertical à direita
+     dele cresce de baixo pra cima.
+   O botão tem sempre o mesmo tamanho (cobre o padding do cabeçalho: 6 px em cima, 6+1 de borda embaixo, 8 à esquerda),
+   então nada pula; sem borda própria (a regra geral de botão animava a cor da borda e piscava em branco). */
+#btnHistorico {
+  position: relative; z-index: 1; align-self: stretch; height: auto; width: 48px; margin: -6px 0 -7px -8px; padding: 0 0 1px 0;
+  border: none; border-radius: 0; background: none; transition: color .15s;
+}
+#btnHistorico:hover:not(:disabled) { background: none; color: var(--texto); }
+#btnHistorico::before, #btnHistorico::after { content: ""; position: absolute; transition: transform .16s ease-out; }
+#btnHistorico::after { left: 0; right: 0; bottom: 0; height: 1px; background: var(--fundo); transform: scaleX(0); transform-origin: left; }
+#btnHistorico::before { right: 0; top: 0; bottom: 0; width: 1px; background: var(--borda); transform: scaleY(0); transform-origin: bottom; }
+body.hist-aberto #btnHistorico::after { transform: scaleX(1); }
+body.hist-aberto #btnHistorico::before { transform: scaleY(1); }
+#btnHistorico svg line { transform-box: fill-box; transform-origin: center; transition: transform .16s ease-out; }
+#btnHistorico svg .l2 { transition: opacity 0s .16s; }
+body.hist-aberto #btnHistorico svg .l1 { transform: translateY(6px) rotate(45deg) scaleX(1.0607); }
+body.hist-aberto #btnHistorico svg .l2 { opacity: 0; transition: opacity 0s; }
+body.hist-aberto #btnHistorico svg .l3 { transform: translateY(-6px) rotate(-45deg) scaleX(1.0607); }
+#btnHistorico .x-fixo { display: none; }
+#btnHistorico.x-pronto .l1, #btnHistorico.x-pronto .l3 { display: none; }
+#btnHistorico.x-pronto .x-fixo { display: inline; }
+
 /* ---------- Histórico ---------- */
-#historico { flex: 1; overflow: auto; padding: 10px; }
+/* Camada por cima da conversa (abaixo do cabeçalho, de 47 px): desenrola de cima pra baixo ao abrir e enrola de volta
+   ao fechar, revelando a conversa. Fechada, fica invisível e sem receber clique; o visibility só muda depois que a
+   animação termina (atraso), então dá tempo de ver ela sair. */
+#historico {
+  position: absolute; top: 47px; left: 0; right: 0; bottom: 0; z-index: 4; overflow: auto; padding: 10px; background: var(--fundo);
+  clip-path: inset(0 0 0 0); transition: clip-path .2s ease-out, visibility 0s;
+}
+#historico[hidden] { display: block; visibility: hidden; pointer-events: none; clip-path: inset(0 0 100% 0); transition: clip-path .2s ease-out, visibility 0s .2s; }
 .hist-topo { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin: 2px 2px 10px; }
+/* Nova conversa no topo da lista, como no claude.ai. */
+.nova-conversa { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin: 0 0 12px; padding: 9px 12px;
+  border-radius: 10px; border: 1px solid var(--destaque); background: var(--destaque); color: var(--destaque-texto); font-weight: 600; }
+.nova-conversa:hover:not(:disabled) { background: var(--destaque); filter: brightness(1.08); }
 #listaHist { list-style: none; margin: 0; padding: 0; }
 #listaHist li {
   background: var(--superficie); border: 1px solid var(--borda); border-radius: 10px;
@@ -101,6 +140,16 @@ main { flex: 1; overflow: auto; padding: 14px 14px 6px; scroll-behavior: smooth;
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-family: ui-monospace, monospace; font-size: 11.5px;
 }
+/* Linha de ferramenta com detalhe: clique abre o texto inteiro (e fecha de novo). */
+.ferramenta.expansivel { cursor: pointer; flex-wrap: wrap; }
+.ferramenta.expansivel:hover { border-color: var(--suave); }
+.ferramenta .f-seta { order: 3; }
+.ferramenta.aberta .f-seta { transform: rotate(90deg); margin-left: auto; order: 2; }
+.ferramenta.aberta .f-resumo { order: 4; flex-basis: 100%; white-space: pre-wrap; word-break: break-word; overflow: visible; cursor: text;
+  user-select: text; margin-top: 4px; }
+/* Setinha das gavetas (linha de ferramenta, gasto da conversa): mesmo desenho do seletor de modelo, gira ao abrir. */
+.chev { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 15px; height: 15px; vertical-align: -2px;
+  color: var(--suave); transition: transform .16s ease-out; }
 .erro { color: var(--perigo); }
 
 /* Indicador de "pensando". */
@@ -131,17 +180,35 @@ main { flex: 1; overflow: auto; padding: 14px 14px 6px; scroll-behavior: smooth;
 .cartao.respondido { opacity: .7; box-shadow: none; }
 
 /* ---------- Rodapé / campo de texto ---------- */
-#marca { font-size: 12px; line-height: 1.45; padding: 6px 14px; border-top: 1px solid var(--borda); color: var(--suave); background: var(--fundo); }
+/* Aviso 🛡️ de que a conversa leu página: balão por cima da caixa de texto que sobe, fica uns segundos e desce (os
+   detalhes ficam no quadro da conversa, gaveta Segurança). */
+#marca { position: absolute; left: 8px; right: 8px; bottom: calc(100% + 4px); z-index: 5; font-size: 12px; line-height: 1.45;
+  padding: 7px 12px; color: var(--texto); background: var(--superficie); border: 1px solid var(--borda); border-radius: 10px;
+  box-shadow: var(--sombra); transition: opacity .16s ease-out, transform .16s ease-out, visibility 0s; }
+#marca[hidden] { display: block; visibility: hidden; pointer-events: none; opacity: 0; transform: translateY(10px);
+  transition: opacity .16s ease-out, transform .16s ease-out, visibility 0s .16s; }
 footer { padding: 8px 10px 10px; background: var(--fundo); }
+#abaAviso { display: flex; align-items: center; gap: 8px; margin: 0 2px 8px; padding: 6px 10px; font-size: 12.5px; line-height: 1.4;
+  color: var(--texto); background: var(--cartao); border: 1px solid var(--cartao-borda); border-radius: 10px; }
+#abaAviso[hidden] { display: none; }
+#longaAviso { display: flex; align-items: center; gap: 8px; margin: 0 2px 8px; padding: 6px 10px; font-size: 12.5px; line-height: 1.4;
+  color: var(--suave); background: var(--superficie); border: 1px solid var(--borda); border-radius: 10px; }
+#longaAviso[hidden] { display: none; }
+#longaTexto { flex: 1; min-width: 0; }
+#btnContinuar { flex: none; font-size: 12.5px; padding: 3px 10px; }
+.msg.resumo { border-left: 3px solid var(--borda); padding-left: 10px; color: var(--suave); }
+#abaTexto { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+#abaBotao { flex: none; font-size: 12.5px; padding: 3px 10px; background: var(--destaque); border-color: var(--destaque); color: var(--destaque-texto); }
+#abaBotao[hidden] { display: none; }
+/* Como na extensão do Chrome: texto em cima, barra embaixo (menu, modelo, enviar), tudo na mesma caixa. */
 .caixa-entrada {
-  display: flex; align-items: flex-end; gap: 8px; padding: 6px 6px 6px 14px;
+  position: relative; display: flex; flex-direction: column; gap: 2px; padding: 8px 8px 6px 12px;
   background: var(--superficie); border: 1px solid var(--borda); border-radius: 14px; box-shadow: var(--sombra);
   transition: border-color .15s;
 }
 .caixa-entrada:focus-within { border-color: var(--destaque); }
-/* Uma linha = 32 px, a mesma altura do botão: texto e botão ficam alinhados. */
 #entrada {
-  flex: 1; min-width: 0; resize: none; border: none; outline: none; background: transparent; color: var(--texto);
+  width: 100%; min-width: 0; resize: none; border: none; outline: none; background: transparent; color: var(--texto);
   font: inherit; line-height: 20px; padding: 6px 0; height: 32px; min-height: 32px; max-height: 180px; overflow-y: auto;
   display: block; margin: 0;
 }
@@ -155,7 +222,35 @@ footer { padding: 8px 10px 10px; background: var(--fundo); }
 .icone[hidden] { display: none; }
 .enviar:hover:not(:disabled) { background: var(--destaque); filter: brightness(1.08); }
 #btnParar { background: var(--texto); color: var(--fundo); }
-#status { color: var(--suave); font-size: 11.5px; margin: 5px 14px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#statusLinha { display: flex; align-items: baseline; gap: 6px; margin: 5px 14px 0; min-width: 0; }
+#status { color: var(--suave); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#usoBotao { flex: none; border: none; background: none; padding: 0; font-size: 11.5px; color: var(--suave); cursor: pointer;
+  text-decoration: underline dotted; text-underline-offset: 2px; }
+#usoBotao:hover { color: var(--texto); background: none; }
+#usoBotao[hidden] { display: none; }
+footer { position: relative; }
+#usoQuadro { position: absolute; left: 8px; right: 8px; bottom: calc(100% + 4px); max-height: 60vh; overflow: auto; z-index: 5;
+  background: var(--superficie); border: 1px solid var(--borda); border-radius: 12px; box-shadow: var(--sombra); padding: 10px 12px;
+  font-size: 12.5px; line-height: 1.45; }
+#usoQuadro, #modeloMenu { transition: opacity .16s ease-out, transform .16s ease-out, visibility 0s; }
+#usoQuadro[hidden], #modeloMenu[hidden] { display: block; visibility: hidden; pointer-events: none; opacity: 0; transform: translateY(10px);
+  transition: opacity .16s ease-out, transform .16s ease-out, visibility 0s .16s; }
+#usoQuadro .u-topo { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 6px; }
+#usoQuadro .u-topo button { border: none; background: none; padding: 0 4px; font-size: 14px; color: var(--suave); }
+#usoQuadro .u-linha { color: var(--suave); margin: 2px 0; }
+#usoQuadro .u-linha b { color: var(--texto); font-weight: 600; }
+#usoQuadro details { border-top: 1px solid var(--borda); padding: 6px 0 2px; margin-top: 6px; }
+#usoQuadro summary { cursor: pointer; list-style: none; }
+#usoQuadro summary::-webkit-details-marker { display: none; }
+#usoQuadro summary .chev { margin-right: 4px; }
+#usoQuadro details.aberta > summary .chev { transform: rotate(90deg); }
+#usoQuadro .u-corpo { overflow: hidden; }
+#usoQuadro .u-info { border-top: 1px solid var(--borda); margin-top: 8px; padding-top: 6px; color: var(--suave); font-size: 12px; }
+#usoQuadro .u-info .u-nota { margin: 4px 0 0 19px; }
+#usoQuadro .u-seg > summary { color: var(--texto); }
+#usoQuadro .u-cham { color: var(--suave); font-size: 11.5px; margin: 2px 0 2px 14px; font-variant-numeric: tabular-nums; }
+#usoQuadro .u-plano { border-top: 1px solid var(--borda); margin-top: 8px; padding-top: 6px; }
+#usoQuadro .u-nota { color: var(--suave); font-size: 11px; margin-top: 6px; }
 
 /* ---------- Modal ---------- */
 #modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); display: flex; align-items: center; justify-content: center; padding: 14px; }
@@ -168,3 +263,28 @@ footer { padding: 8px 10px 10px; background: var(--fundo); }
 
 /* Rolagem discreta. */
 * { scrollbar-width: thin; scrollbar-color: var(--borda) transparent; }
+
+/* ---------- Barra da caixa de texto: seletor de modelo, parar/enviar ---------- */
+.barra-entrada { display: flex; align-items: center; gap: 2px; margin-left: -6px; }
+.barra-entrada .espaco { flex: 1; }
+.modelo-botao { display: inline-flex; align-items: center; gap: 4px; border: none; background: none; color: var(--suave);
+  font-size: 12.5px; padding: 4px 8px; border-radius: 8px; white-space: nowrap; }
+.modelo-botao:hover:not(:disabled) { background: var(--bolha-user); color: var(--texto); }
+/* Setinha do seletor: gira pra cima com a lista aberta (0,16 s) e, no fim, troca pela seta fixa pra cima (sem
+   transformação, que o Firefox desenha um pouco diferente até largar a camada da animação). */
+.modelo-botao .seta-anim { transform-box: fill-box; transform-origin: center; transition: transform .16s ease-out; }
+.modelo-botao.aberto .seta-anim { transform: rotate(180deg); }
+.modelo-botao .seta-cima { display: none; }
+.modelo-botao.seta-pronta .seta-anim { display: none; }
+.modelo-botao.seta-pronta .seta-cima { display: inline; }
+#modeloMenu { position: absolute; left: 6px; bottom: calc(100% + 6px); min-width: 250px; max-width: calc(100% - 12px); z-index: 6;
+  background: var(--superficie); border: 1px solid var(--borda); border-radius: 12px; box-shadow: var(--sombra); padding: 4px; }
+
+#modeloMenu button { display: flex; align-items: flex-start; gap: 8px; width: 100%; text-align: left; border: none; background: none;
+  padding: 7px 10px; border-radius: 8px; }
+#modeloMenu button:hover { background: var(--bolha-user); }
+#modeloMenu .m-txt { flex: 1; min-width: 0; }
+#modeloMenu .m-nome { color: var(--texto); font-weight: 500; }
+#modeloMenu .m-desc { color: var(--suave); font-size: 11.5px; margin-top: 1px; }
+#modeloMenu .m-ok { flex: none; width: 14px; color: var(--destaque); font-weight: 700; }
+#modeloMenu .m-nota { color: var(--suave); font-size: 11px; padding: 6px 10px 4px; border-top: 1px solid var(--borda); margin-top: 4px; }

@@ -4,7 +4,7 @@
 #  - loja.teste, permitido2.teste, 127.0.0.1 e localhost já concedidos (simula o usuário aprovando no prompt);
 #  - janelas de confirmação abrem de verdade, mas a resposta vem do teste (POST /__confirm), não de um clique;
 #  - ao iniciar, abre e libera abas privilegiadas (opções da extensão, about:...), simulando o usuário
-#    clicando no ícone nelas, pra provar que nem assim as ferramentas agem nessas páginas.
+#    liberando elas (como no menu do ícone), pra provar que nem assim as ferramentas agem nessas páginas.
 set -eu
 DEST="$1"
 SRC="$(cd "$(dirname "$0")/.." && pwd)/extension"
@@ -64,6 +64,29 @@ browser.tabs.onUpdated.addListener((id, info) => {
 browser.runtime.onMessage.addListener((msg, sender) => {
   if (msg?.type !== "__test_info" || sender.id !== browser.runtime.id) return;
   return Promise.resolve({ panelPorts: [...panelPorts].map((p) => p.sender.url), nativeConnected: !!nativePort });
+});
+
+// __aba-solta?url=X abre X numa aba ATIVA que não está liberada (pra testar a aba ativa emprestada só pra leitura).
+browser.tabs.onUpdated.addListener((id, info) => {
+  if (info.url?.startsWith("http://loja.teste:8765/__aba-solta")) {
+    const alvo = new URL(info.url).searchParams.get("url") || "http://loja.teste:8765/";
+    browser.tabs.create({ url: alvo, active: true });
+  }
+});
+
+// __worker-chave: faz o mesmo pedido que a página de opções faz pra gravar a chave do modelo auxiliar, e manda o
+// resultado pro teste (POST /__chave).
+browser.tabs.onUpdated.addListener((id, info) => {
+  if (!info.url?.startsWith("http://loja.teste:8765/__worker-chave")) return;
+  chaveDoWorker({ acao: "gravar", chave: "sk-ant-api03-chave-de-teste-0000000000abcd" })
+    .then((r) => fetch("http://loja.teste:8765/__chave", { method: "POST", body: JSON.stringify(r) }));
+});
+
+// __menu-aba?tab=N: o mesmo que a caixa "Claude pode agir nesta aba" do menu do ícone (o teste não abre menu).
+browser.tabs.onUpdated.addListener(async (id, info) => {
+  if (!info.url?.startsWith("http://loja.teste:8765/__menu-aba")) return;
+  const alvo = await browser.tabs.get(Number(new URL(info.url).searchParams.get("tab"))).catch(() => null);
+  if (alvo) alternarAba(alvo);
 });
 
 // Abrir http://loja.teste:8765/__ligar-js liga a ferramenta javascript (o teste não tem como clicar nas opções).

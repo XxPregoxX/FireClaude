@@ -26,6 +26,7 @@ const pixels = [];
 const popups = [];
 let respostaPopup = [];
 let md = null;
+let respostaChave = null;
 
 function corpo(req) {
   return new Promise((r) => {
@@ -48,6 +49,10 @@ const srv = http.createServer(async (req, res) => {
   if (u.pathname === "/__pixel") {
     pixels.push(u.search);
     return res.end("");
+  }
+  if (u.pathname === "/__chave") {
+    respostaChave = JSON.parse(await corpo(req));
+    return res.end("ok");
   }
   if (u.pathname === "/__md") {
     md = JSON.parse(await corpo(req));
@@ -133,6 +138,29 @@ try {
   await sleep(1500);
   check("painel não consegue mandar tool/tool_result/config pro programa local",
     !recebido.host.some((m) => m.id === "falso" || m.id === "x" || (m.type === "config" && m.workdir === "/")), JSON.stringify(recebido.host));
+  const cfg0 = recebido.host.find((m) => m.type === "config");
+  check("configuração leva o modelo e o esforço das opções (vazio = padrão do programa do painel)", cfg0 && "modelo" in cfg0 && "esforco" in cfg0, JSON.stringify(cfg0));
+  fila.panel.push({ type: "modelo_conversa", modelo: "claude-opus-5-5", sessionId: "s-123" });
+  check("seletor de modelo do painel chega no programa local (com a conversa aberta)", !!(await espera("host", (m) => m.type === "modelo_conversa" &&
+    m.modelo === "claude-opus-5-5" && m.sessionId === "s-123")));
+  fila.host.push({ type: "modelo", modelo: "claude-opus-5-5", nome: "Opus 5.5", modelos: [{ id: "claude-sonnet-5-5", nome: "Sonnet 5.5", descricao: "x" }, { id: "claude-opus-5-5", nome: "Opus 5.5", descricao: "y" }] });
+  check("aviso de modelo do programa local chega no painel", !!(await espera("panel", (m) => m.type === "modelo" && m.nome === "Opus 5.5")));
+  check("configuração leva o modelo auxiliar (padrão ligado)", cfg0?.worker?.ligado === true, JSON.stringify(cfg0?.worker));
+  respostaPopup = ["once"];
+  await call("tab_new", { url: LOJA + "__worker-chave" });
+  const pedidoChave = await espera("host", (m) => m.type === "worker_chave");
+  check("chave do modelo auxiliar vai das opções direto pro programa local", pedidoChave?.acao === "gravar" && /^sk-ant-api03-chave-de-teste/.test(pedidoChave.chave) &&
+    typeof pedidoChave.id === "string", JSON.stringify(pedidoChave));
+  fila.host.push({ type: "worker_chave_ok", id: pedidoChave?.id, final: "abcd" });
+  for (let t = 0; t < 5000 && !respostaChave; t += 100) await sleep(100);
+  check("resposta volta pra quem pediu (só o final da chave)", respostaChave?.final === "abcd" && !respostaChave.erro, JSON.stringify(respostaChave));
+  await sleep(500);
+  check("nem a chave nem a resposta sobre ela aparecem no painel", !recebido.panel.some((m) => /sk-ant|worker_chave/.test(JSON.stringify(m))));
+  fila.panel.push({ type: "worker_chave", acao: "gravar", chave: "sk-ant-do-painel" });
+  await sleep(1200);
+  check("o painel não consegue mandar chave pro programa local", !recebido.host.some((m) => m.type === "worker_chave" && /do-painel/.test(m.chave || "")));
+  fila.panel.push({ type: "continuar_nova" });
+  check("'continuar em conversa nova' do painel chega no programa local", !!(await espera("host", (m) => m.type === "continuar_nova")));
   fila.host.push({ type: "assistant", text: "**oi**" });
   check("evento do programa local chega no painel", !!(await espera("panel", (m) => m.type === "assistant" && m.text === "**oi**")));
 
@@ -167,6 +195,99 @@ try {
   id = ferramenta("constructor", {});
   r = await espera("host", (m) => m.type === "tool_result" && m.id === id);
   check("comando com nome de propriedade do Object é recusado", r?.ok === false && /desconhecido/.test(r.error), JSON.stringify(r));
+
+  console.log("\n# Aba ativa: o painel lê sem clique; agir continua exigindo a aba liberada");
+  let desde = recebido.panel.length;
+  const novoEstado = (teste, ms) => espera("panel", (m) => m.type === "aba_estado" && recebido.panel.indexOf(m) >= desde && teste(m), ms);
+  const resultado = async (cmd, params) => {
+    const i = ferramenta(cmd, params);
+    return espera("host", (m) => m.type === "tool_result" && m.id === i);
+  };
+  const abaSolta = async (url) => {
+    desde = recebido.panel.length;
+    respostaPopup = ["once"];
+    await call("tab_new", { url: LOJA + "__aba-solta?url=" + encodeURIComponent(url) });
+  };
+  await abaSolta(LOJA + "outra.html");
+  let e = await novoEstado((m) => m.legivel && !m.liberada && m.host === "loja.teste");
+  check("aba ativa não liberada de site permitido: painel recebe 'legível, não liberada', sem título nem URL",
+    !!e && !("title" in e) && !("url" in e) && e.motivo === null, JSON.stringify(e));
+  const abaA = e?.tabId;
+  r = await resultado("read_page", { tabId: abaA });
+  check("painel lê a aba ativa sem clique no ícone", r?.ok === true && /outra\.html/.test(r.result?.url), JSON.stringify(r).slice(0, 300));
+  r = await resultado("screenshot", { tabId: abaA });
+  check("print na aba ativa emprestada esbarra só no gesto do Firefox (activeTab), não na liberação", r?.ok === false && r.code === "print", JSON.stringify(r).slice(0, 300));
+  r = await resultado("tabs_list", {});
+  const naLista = r?.result?.tabs?.find((t) => t.tabId === abaA);
+  check("tabs_list do painel inclui a aba ativa como 'só leitura' e 'a que o usuário está olhando'", naLista?.soLeitura === true && naLista?.frente === true &&
+    !r.result.ativa, JSON.stringify(r?.result).slice(0, 400));
+  r = await resultado("aba_ativa", {});
+  check("aba_ativa: legível, com id e site", r?.ok && r.result.legivel === true && r.result.tabId === abaA && r.result.host === "loja.teste" &&
+    r.result.liberada === false, JSON.stringify(r));
+  const tA = await call("read_page", { tabId: abaA });
+  check("o Claude do terminal não lê a aba ativa sem ela ser liberada", tA.err && /não está liberada/.test(tA.text), tA.text);
+  check("...e a orientação é o menu do ícone (não mais 'clique no ícone')", /botão direito no ícone do Claude → marque 'Claude pode agir nesta aba'/.test(tA.text) &&
+    !/clicar no ícone|clique no ícone/.test(tA.text), tA.text);
+  desde = recebido.panel.length;
+  r = await resultado("click", { tabId: abaA, selector: "body" });
+  check("agir na aba ativa emprestada NÃO passa (código nao_liberada)", r?.ok === false && r.code === "nao_liberada", JSON.stringify(r));
+  e = await novoEstado((m) => m.tabId === abaA && m.pedirAba === true);
+  check("...e o painel recebe o pedido pra mostrar 'Liberar esta aba'", !!e, JSON.stringify(recebido.panel.filter((m) => m.type === "aba_estado").slice(-3)));
+
+  await abaSolta("http://outro.teste:8765/");
+  e = await novoEstado((m) => m.motivo === "fora_da_lista");
+  check("aba ativa de site fora da lista: motivo e host (pro botão 'Permitir este site'), sem título nem URL",
+    e?.host === "outro.teste" && e.legivel === false && !("title" in e) && !("url" in e), JSON.stringify(e));
+  const abaB = e?.tabId;
+  r = await resultado("tabs_list", {});
+  check("tabs_list do painel com a aba ativa fora da lista: só o motivo, sem título nem URL nem id",
+    r?.result?.ativa?.motivo === "fora_da_lista" && !r.result.tabs.some((t) => t.tabId === abaB || /^http:\/\/outro\.teste/.test(t.url)),
+    JSON.stringify(r?.result).slice(0, 400));
+  const tl = await call("tabs_list");
+  check("tabs_list do terminal diz que a aba da frente não está legível, sem o site", /NÃO está legível/.test(tl.text) && !/\| http:\/\/outro\.teste/.test(tl.text), tl.text.slice(-400));
+  r = await resultado("aba_ativa", {});
+  check("aba_ativa: ilegível, só o motivo", r?.ok && JSON.stringify(r.result) === JSON.stringify({ legivel: false, motivo: "fora_da_lista" }), JSON.stringify(r));
+  r = await resultado("read_page", { tabId: abaB });
+  check("painel não lê site fora da lista, mesmo na aba ativa (código fora_da_lista)", r?.ok === false && r.code === "fora_da_lista", JSON.stringify(r));
+  r = await resultado("read_page", { tabId: abaA });
+  check("aba que deixou de ser a ativa (e não foi liberada) não é mais legível", r?.ok === false && r.code === "nao_liberada", JSON.stringify(r));
+  desde = recebido.panel.length;
+  fila.panel.push({ type: "liberar_aba", tabId: abaB });
+  const liberouB = await novoEstado((m) => m.tabId === abaB && m.liberada, 2500);
+  check("'liberar_aba' do painel não libera site que o Firefox não permitiu", !liberouB, JSON.stringify(liberouB));
+
+  await abaSolta("http://127.0.0.1:8765/");
+  e = await novoEstado((m) => m.motivo === "rede_local");
+  check("aba ativa de rede local: motivo, sem host", !!e && e.host === null && e.legivel === false, JSON.stringify(e));
+
+  await abaSolta(LOJA);
+  e = await novoEstado((m) => m.legivel && !m.liberada && m.host === "loja.teste");
+  const abaD = e?.tabId;
+  desde = recebido.panel.length;
+  fila.panel.push({ type: "liberar_aba", tabId: abaD });
+  e = await novoEstado((m) => m.tabId === abaD && m.liberada);
+  check("'Liberar esta aba' no painel libera a aba ativa de site permitido", !!e, JSON.stringify(recebido.panel.filter((m) => m.type === "aba_estado").slice(-3)));
+  // (o tabs_list do painel leu títulos de outro site: a aprovação por tarefa de loja.teste já caiu)
+  id = ferramenta("click", { tabId: abaD, selector: "#q" });
+  pedido = await espera("panel", (m) => m.type === "confirm_request" && m.details.action === "clicar" && recebido.panel.indexOf(m) >= desde);
+  check("aba liberada pelo painel: clicar pede confirmação na conversa", pedido?.details.host === "loja.teste", JSON.stringify(pedido));
+  fila.panel.push({ type: "confirm_answer", id: pedido?.id, decision: "once" });
+  r = await espera("host", (m) => m.type === "tool_result" && m.id === id);
+  check("...e aprovado, roda", r?.ok === true, JSON.stringify(r));
+  id = ferramenta("type", { tabId: abaD, selector: "#fx", text: "oi", submit: true });
+  pedido = await espera("panel", (m) => m.type === "confirm_request" && m.details.kind === "envio" && m.details.text === "oi");
+  check("aba liberada pelo painel: envio continua pedindo confirmação", !!pedido, JSON.stringify(pedido));
+  fila.panel.push({ type: "confirm_answer", id: pedido?.id, decision: "deny" });
+  r = await espera("host", (m) => m.type === "tool_result" && m.id === id);
+  check("...e negar funciona", r?.code === "negado", JSON.stringify(r));
+
+  console.log("\n# Menu do ícone: revogar a aba");
+  // (a abaD foi liberada pelo painel lá em cima)
+  respostaPopup = ["once"];
+  await call("tab_new", { url: LOJA + "__menu-aba?tab=" + abaD });
+  await sleep(800);
+  r = await resultado("click", { tabId: abaD, selector: "#q" });
+  check("desmarcar 'Claude pode agir nesta aba' (menu do ícone): a aba deixa de estar liberada pra agir", r?.ok === false && r.code === "nao_liberada", JSON.stringify(r));
 
   console.log("\n# Painel fechado");
   id = ferramenta("navigate", { tabId: tab, url: "http://permitido2.teste:8765/" });

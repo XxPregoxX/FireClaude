@@ -3,6 +3,7 @@ const port = browser.runtime.connect({ name: "painel" });
 const manda = (m) => fetch("http://loja.teste:8765/__panel/in", { method: "POST", body: JSON.stringify(m) }).catch(() => {});
 port.onMessage.addListener(manda);
 port.onDisconnect.addListener(() => manda({ type: "__desconectado" }));
+browser.windows.getCurrent().then((w) => port.postMessage({ type: "janela", windowId: w.id }));
 (async () => {
   for (;;) {
     let lista = [];

@@ -22,7 +22,8 @@ Both paths expose the same browser tools (`server/browser-tools.mjs`); only the 
 
 **Tools.** Read-only, never ask for confirmation: `read_page`, `query` (elements by CSS selector, with visible text
 and the attributes you ask for), `extrair_tabela` (tables), `extrair_links` (links), `estado_formulario` (form state),
-`esperar_por` (wait for an element), `scroll`, `console_logs`, `tabs_list`, `screenshot`, `wait`. Actions, which go through
+`esperar_por` (wait for an element), `scroll`, `console_logs`, `tabs_list`, `screenshot`, `wait`, and, in the sidebar
+panel only, `perguntar_pagina` (a quick question about the page, answered by the helper model; see below). Actions, which go through
 the approval flow below: `tab_new`, `navigate`, `click`, `type`, `press_key`, `select_option`, `tab_close` and
 `javascript`. The read tools are fixed extension code: their parameters are plain data (a selector goes to
 `querySelectorAll` and never becomes code), passwords come back masked, and none of them read cookies, localStorage,
@@ -31,7 +32,7 @@ sessionStorage or IndexedDB. They also work on sites whose CSP blocks the `javas
 
 ## Requirements
 
-- Linux with Firefox 142 or newer. Developed and tested on Fedora with Firefox 155.
+- Linux with Firefox 142 or newer. Developed and tested on Fedora with Firefox 157.
 - Node.js 18 or newer (tested on 22), and npm.
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) installed and logged in (`claude` on your `PATH`, or
   in `~/.local/bin/claude`). The sidebar panel runs that same CLI through the Claude Agent SDK, so it uses your own
@@ -111,28 +112,58 @@ Open a new Claude Code session after installing.
 
 ## Usage
 
-- **Allowed sites.** Open the extension options, or click the toolbar icon on a tab of that site. Firefox asks
-  whether to grant access. If you accept, the site joins the list and that tab is shared with Claude (the icon shows
-  ✓). Clicking the icon again un-shares the tab; the site stays on the list.
-- **Screenshots.** Firefox only allows a screenshot after you click the icon on that tab, and only until the page
-  changes. When Claude needs one, the icon shows 📷 and Claude tells you; clicking it then allows the screenshot
-  without un-sharing the tab.
-- **Icon.** Green means the MCP server is connected; grey means Claude Code is not running. The tooltip shows when the
-  current approval expires.
+- **Toolbar icon.** A click opens and closes the sidebar panel (and allows screenshots of the front page). The
+  right-click menu has one checkbox per permission, showing the state of the front tab: *Claude pode agir nesta aba*
+  (Claude can act on this tab) and *Claude pode tirar print desta página* (Claude can take screenshots of this page,
+  until it changes), plus *Opções*. The tooltip lists the same state (read / act / screenshot) and when the current
+  approval expires. Green means the MCP server is connected; grey means Claude Code is not running; ✓ means the tab is
+  shared for actions.
+- **Allowed sites.** Open the extension options, use the panel's *Permitir este site* button, or tick *Claude pode agir
+  nesta aba* in the icon menu on a tab of that site. Firefox asks whether to grant access. If you accept, the site
+  joins the list and that tab is shared with Claude. Unticking the box un-shares the tab; the site stays on the list.
+- **Screenshots.** Firefox only allows a screenshot after a gesture of yours on that page (clicking the icon, the
+  screenshot box in the icon menu, or an extension shortcut), and only until the page changes. With the panel open,
+  **Alt+Shift+P** or the box allow it without closing the panel; unticking the box blocks it again. When Claude needs
+  one, the icon shows 📷 and the panel tells you.
 - **Sidebar panel** (Alt+Shift+C, or View → Sidebar → Claude). It chats with Claude Code in a working folder that you
   set in the options. The folder must be inside your home directory; if it is empty, the panel uses
   `~/Documentos/Projetos` when it exists, otherwise your home.
   - Replies are rendered as Markdown, with a copy button on code blocks. Links open only when you click, after a dialog
     shows the full address, and remote images never load.
-  - The panel does **not** see the open page until you ask ("read this page"); then it uses the read tools.
+  - The panel **reads the active tab without an icon click** (read only) when its site is on the allowed list, for as
+    long as it is the front tab. It reads only when your message depends on the page. Acting (click, type, navigate)
+    still needs the tab shared plus a confirmation; blocked sites and the local network stay blocked; the lock after
+    reading a page still applies.
+  - If the active tab's site isn't allowed, the panel shows *Permitir este site* (Firefox's permission prompt opens
+    right there). If Claude tries to act on an active tab that isn't shared, the panel shows *Liberar esta aba*
+    (share this tab).
+  - **Model picker** inside the input box: Sonnet 5.5 (default, set in the options), Opus 5.5 or Haiku 5.5. You can
+    pick before the first message or switch mid-conversation; the choice is saved with the conversation. The
+    **effort** level (options) is medium by default.
+  - **Helper model** (options; on by default, Haiku 5.5 through your subscription). It reads and condenses large
+    content outside the main conversation: `perguntar_pagina`, large command or file output (a summary plus the full
+    file under `$XDG_RUNTIME_DIR/claude-firefox/saidas`), the summary for "continue in a new conversation" and
+    conversation titles. It has no tools (text in, text out), never sees the conversation (only the instruction and
+    the content, up to ~50k tokens), runs one call at a time, and falls back to the old behaviour if it fails. What it
+    returns from page content stays marked as untrusted. Providers: your subscription, a separate API key (stored in
+    `~/.config/claude-firefox/worker-api-key`, mode 0600, never in the extension nor in the panel's Claude), or a local
+    OpenAI-compatible model (localhost only). Usage is logged to `~/.cache/claude-firefox/worker-uso.jsonl`.
+  - **Usage.** The status line shows the context size and the cost so far; clicking it opens a breakdown per model
+    (main and helper, with tokens read / cached / written and the cost at API prices), the list of calls, your plan's
+    current 5-hour and weekly usage, and a *Segurança* (security) drawer that says whether this conversation has read
+    pages and what that changes. The per-conversation plan percentage is an estimate learned from how much the plan
+    moves after each message (`~/.config/claude-firefox/plano-calibracao.json`); reading the plan uses an experimental SDK API.
+  - **Long conversations.** Above ~60k tokens the panel offers *Continuar em conversa nova*: it asks for a short
+    summary and sends it with the first message of a clean conversation (which starts marked if the old one had read
+    a page). Only when you click.
   - Approvals for both browser and computer actions appear as cards with buttons inside the conversation.
-  - ☰ lists past conversations, where you can open, rename or delete them.
+  - ☰ lists past conversations, where you can start a new one, open, rename or delete them.
   - The Claude process stays alive while you use it and exits after 15 minutes idle; the conversation is kept.
   - **Conversation style** and **About me** (options) are appended to the panel's system prompt, after the panel's
     fixed rules. They change the tone of replies, never security or permissions, and apply to new conversations.
 - **Options** (`about:addons`):
   - allowed sites and blocked sites (the blocked list starts with banks and wallets and overrides the allowed list);
-  - the panel's working folder, conversation style and "about me";
+  - the panel's working folder, model, effort, helper model, conversation style and "about me";
   - the per-task approval length (15 minutes by default);
   - local network access (off by default);
   - the `javascript` tool (off by default).
@@ -149,8 +180,10 @@ matter.
 - The extension asks for **no** host permissions at install time. Every site (`*://*/*`) is an *optional* permission
   that you grant one site at a time through Firefox's own prompt. Without it, Firefox itself stops the extension from
   reading or touching the page.
-- Claude only acts on **tabs it opened** or that **you shared**. If a tab ends up on a site outside the list (back
-  button, redirect, link), it disappears from `tabs_list`, title and URL included, and no tool acts on it.
+- Claude only acts on **tabs it opened** or that **you shared**. The one read-only exception: the sidebar panel may read
+  the active tab of the focused window when its site is allowed (the terminal session may not). If a tab ends up on a
+  site outside the list (back button, redirect, link), it disappears from `tabs_list`, title and URL included, and no
+  tool acts on it.
 - Only `http`/`https` pages are reachable. `file:`, `about:`, `data:`, `view-source:`, other extensions' pages and this
   extension's own options page are always out of reach (covered by tests).
 - `localhost`, private IP ranges, `.local` and dot-less hostnames stay blocked even if allowed, until you enable local
@@ -225,7 +258,8 @@ matter.
   after a denial") comes from fixed server text outside the block.
 - **Heuristic detector.** It flags typical injection phrases (Portuguese and English), `curl | sh`, sensitive paths and
   fake system tags with a 🚨 warning. It is a hint, not a defense.
-- **Hidden text.** `read_page` skips invisible, tiny, off-screen and `aria-hidden` text and zero-width characters.
+- **Hidden text.** `read_page` skips invisible, tiny, off-screen (measured inside the scrolling box, if there is one) and
+  `aria-hidden` text and zero-width characters.
 - **Parameters never become code.** The background script talks to the content script by message, never by building
   a script out of parameters.
 - **Authenticated bridge.** The WebSocket server only accepts the exact `moz-extension://<this extension's UUID>`
@@ -254,6 +288,8 @@ matter.
     after it starts, within 15 seconds of a Claude action: it is paused, you are asked, and it is deleted if you deny.
     A very small file may finish before the pause, but it is still deleted on deny. Your own downloads in that
     15-second window will also ask.
+- **The helper model reads pages too.** It has no tools and its output is marked as untrusted, but a summary can still
+  be wrong or miss a detail. Claude is told to use `read_page` when it needs the whole page.
 - **Files written by the panel.** After the mark, writing files inside the working folder is free. A changed
   `package.json` script, `Makefile` or `.sh` file only runs when **you** run it, so review what Claude changed after
   reading a page before you run it. A synced or shared working folder turns "create a file" into "send it out".
@@ -262,8 +298,8 @@ matter.
   local processes without access to your files, such as Flatpak apps and containers.
 - **Synthetic events.** Clicks and keys are synthetic events: some sites ignore them, and pop-ups opened by a click may
   be blocked.
-- **Temporary page access.** Clicking the icon gives Firefox temporary access to that page (`activeTab`) even if you
-  decline the permission prompt. In that case, the extension's own checks are what block it.
+- **Temporary page access.** Clicking the icon, or an item of its menu, gives Firefox temporary access to that page
+  (`activeTab`) even if you decline the permission prompt. In that case, the extension's own checks are what block it.
 - **Review what you approve.** The detector is heuristic. The defense that actually holds is the hook plus your
   approvals.
 
@@ -277,9 +313,10 @@ The Firefox tests need [web-ext](https://github.com/mozilla/web-ext):
 ```
 
 ```sh
-./test/run.sh                 # hook + panel host (no Firefox), then security, bridge and panel tests in Firefox
+./test/run.sh                 # hook, panel host, helper model (no Firefox); then security, bridge, panel, page reading
 node test/guard.mjs           # hook only, no Firefox
 node test/chat-host.mjs       # panel host internals, no Firefox
+node test/worker.mjs          # helper model, no Firefox (WORKER_REAL=1 adds one real call through your subscription)
 node test/chat-integracao.mjs # panel host against the REAL Claude Code (uses Haiku and a bit of your plan)
 ```
 

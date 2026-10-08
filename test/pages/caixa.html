@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><title>App com caixa</title>
+<style>
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  #chat { position: relative; height: 300px; overflow-y: auto; }
+  #chat p { height: 40px; margin: 0; }
+  #jogado { position: absolute; left: -9999px; top: 0; }
+</style></head><body>
+<h1>Conversa</h1>
+<div id="chat"><p id="jogado">escondido-na-caixa</p></div>
+<script>
+  // 60 mensagens (2400px) numa caixa de 300px, rolada até o fim como num chat de verdade.
+  const chat = document.getElementById("chat");
+  for (let i = 0; i < 60; i++) {
+    const p = document.createElement("p");
+    p.textContent = `mensagem ${i}`;
+    chat.append(p);
+  }
+  chat.scrollTop = chat.scrollHeight;
+</script>
+</body></html>

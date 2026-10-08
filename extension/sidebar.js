@@ -16,6 +16,8 @@ let bolha = null; // { el, texto } da resposta sendo escrita
 function conectar() {
   port = browser.runtime.connect({ name: "painel" });
   port.onMessage.addListener(receber);
+  // O background acompanha a aba ativa DESTA janela (cada janela tem o próprio painel).
+  browser.windows.getCurrent().then((w) => enviar({ type: "janela", windowId: w.id })).catch(() => {});
   port.onDisconnect.addListener(() => {
     status("desconectado da extensão; tentando de novo…");
     setTimeout(conectar, 1500);
@@ -34,7 +36,20 @@ function setOcupado(v) {
   if (v) comDigitando();
   else semDigitando();
   if (!v) status(atual.sessionId ? "pronto" : "pronto · conversa nova");
+  atualizarUsoBotao();
 }
+
+// Tamanho da conversa (o que cada mensagem relê). Acima do limite, sugere continuar numa conversa nova.
+let tamanho = 0;
+function mostrarTamanho(tokens, longa) {
+  tamanho = Number.isFinite(tokens) ? tokens : 0;
+  $("longaAviso").hidden = !longa;
+  $("longaTexto").textContent = longa ? `Conversa longa (~${Math.round(tamanho / 1000)}k tokens): cada mensagem relê tudo isso.` : "";
+  if (!ocupado) setOcupado(false);
+}
+
+// Modelo da conversa atual (vem do programa do painel) e os outros, pra troca rápida no menu.
+let modeloInfo = null;
 
 // ---------- Copiar ----------
 // navigator.clipboard às vezes falha no painel; aí copia pelo jeito antigo (textarea escondida + execCommand).
@@ -187,7 +202,7 @@ function semDigitando() {
 
 // Nome em português pra linha de ferramenta; o detalhe técnico fica numa linha só (inteiro ao passar o mouse).
 const NOMES_FERRAMENTA = {
-  read_page: "Lendo a página", query: "Lendo a página", extrair_tabela: "Lendo uma tabela", extrair_links: "Lendo os links",
+  read_page: "Lendo a página", perguntar_pagina: "Perguntando sobre a página", query: "Lendo a página", extrair_tabela: "Lendo uma tabela", extrair_links: "Lendo os links",
   estado_formulario: "Lendo o formulário", esperar_por: "Esperando a página", tabs_list: "Vendo as abas",
   tab_new: "Abrindo uma aba", tab_close: "Fechando uma aba", navigate: "Navegando", click: "Clicando", type: "Digitando",
   press_key: "Apertando uma tecla", select_option: "Escolhendo uma opção", scroll: "Rolando a página",
@@ -217,8 +232,17 @@ function linhaFerramenta(nome, resumo) {
     const r = document.createElement("span");
     r.className = "f-resumo";
     r.textContent = resumo;
-    d.append(r);
-    d.title = `${curto}: ${resumo}`;
+    // Clique abre o detalhe inteiro (e fecha de novo); selecionando texto dentro, não fecha (dá pra copiar).
+    const seta = setinha();
+    seta.classList.add("f-seta");
+    d.append(r, seta);
+    d.classList.add("expansivel");
+    d.title = "Clique pra ver tudo";
+    d.addEventListener("click", () => {
+      if (d.classList.contains("aberta") && selecionando(d)) return;
+      d.classList.toggle("aberta");
+      d.title = d.classList.contains("aberta") ? "" : "Clique pra ver tudo";
+    });
   }
   some(d);
   if (ocupado) comDigitando();
@@ -323,15 +347,349 @@ function pedidoComputador(m) {
   ], botoes, (decision) => enviar({ type: "permission_answer", id: m.id, decision }));
 }
 
+// ---------- Aba ativa (o estado vem do background; título e endereço da página nunca) ----------
+
+let atalhoPrint = "Alt+Shift+P";
+browser.commands.getAll().then((cs) => {
+  const c = cs.find((x) => x.name === "liberar-print");
+  if (c?.shortcut) atalhoPrint = c.shortcut;
+}).catch(() => {});
+
+function mostrarAba(e) {
+  const botao = $("abaBotao");
+  botao.hidden = true;
+  botao.onclick = null;
+  let texto = "";
+  if (e.motivo === "fora_da_lista" && typeof e.host === "string" && /^[a-z0-9.-]{1,253}$/i.test(e.host)) {
+    texto = `${e.host} não está liberado pro Claude.`;
+    botao.textContent = "Permitir este site";
+    botao.hidden = false;
+    // O Firefox só mostra o pedido de permissão se ele sair direto do clique (nada de await antes).
+    botao.onclick = () => browser.permissions.request({ origins: [`*://${e.host}/*`] }).then(
+      (ok) => ok && enviar({ type: "liberar_aba", tabId: e.tabId }),
+      () => status("o Firefox não deixou pedir a permissão por aqui; use o botão direito no ícone do Claude → marque 'Claude pode agir nesta aba'"),
+    );
+  } else if (e.legivel && e.pedirAba && !e.liberada) {
+    texto = "Pra agir nesta aba (clicar, digitar, navegar), libere ela pro Claude.";
+    botao.textContent = "Liberar esta aba";
+    botao.hidden = false;
+    botao.onclick = () => enviar({ type: "liberar_aba", tabId: e.tabId });
+  } else if (e.print) {
+    texto = `📷 O Claude quer ver a tela: aperte ${atalhoPrint} (ou botão direito no ícone do Claude → marque "Claude pode tirar print").`;
+  }
+  $("abaTexto").textContent = texto;
+  $("abaAviso").hidden = !texto;
+}
+
+// ---------- Seletor de modelo (como na extensão do Chrome: dentro da caixa de texto) ----------
+
+function mostrarModelos() {
+  const menu = $("modeloMenu");
+  menu.replaceChildren();
+  for (const o of modeloInfo?.modelos || []) {
+    const b = document.createElement("button");
+    const ok = document.createElement("span");
+    ok.className = "m-ok";
+    ok.textContent = o.id === modeloInfo.id ? "✓" : "";
+    const txt = document.createElement("span");
+    txt.className = "m-txt";
+    const nome = document.createElement("div");
+    nome.className = "m-nome";
+    nome.textContent = String(o.nome || o.id).slice(0, 40);
+    const desc = document.createElement("div");
+    desc.className = "m-desc";
+    desc.textContent = String(o.descricao || "").slice(0, 120);
+    txt.append(nome, desc);
+    b.append(txt, ok);
+    b.addEventListener("click", () => {
+      menu.hidden = true;
+      enviar({ type: "modelo_conversa", modelo: o.id, sessionId: atual.sessionId || undefined });
+    });
+    menu.append(b);
+  }
+  const nota = document.createElement("div");
+  nota.className = "m-nota";
+  nota.textContent = atual.sessionId ? "Vale pra esta conversa (fica gravado nela)." : "Vale pra esta conversa nova. O padrão fica nas opções.";
+  menu.append(nota);
+  menu.hidden = false;
+}
+// A setinha acompanha a lista (abre de qualquer jeito: botão; fecha por Esc, clique fora ou escolha).
+new MutationObserver(() => {
+  const b = $("modeloBotao");
+  if (!$("modeloMenu").hidden) {
+    b.classList.remove("seta-pronta");
+    b.classList.add("aberto");
+    return;
+  }
+  // Fechando: mostra de novo a seta girada (ainda pra cima), força o navegador a desenhar ela assim e só então tira o
+  // "aberto"; sem isso não há de onde animar e ela voltava seca.
+  if (b.classList.contains("seta-pronta")) {
+    b.classList.remove("seta-pronta");
+    void b.offsetWidth;
+  }
+  b.classList.remove("aberto");
+}).observe($("modeloMenu"), { attributes: true, attributeFilter: ["hidden"] });
+$("modeloBotao").querySelector(".seta-anim").addEventListener("transitionend", (ev) => {
+  if (ev.propertyName === "transform" && $("modeloBotao").classList.contains("aberto")) $("modeloBotao").classList.add("seta-pronta");
+});
+$("modeloBotao").addEventListener("click", (ev) => {
+  ev.stopPropagation();
+  if (!modeloInfo) return status("abrindo o Claude…");
+  if ($("modeloMenu").hidden) mostrarModelos();
+  else $("modeloMenu").hidden = true;
+});
+document.addEventListener("click", (ev) => {
+  const menu = $("modeloMenu");
+  if (!menu.hidden && !menu.contains(ev.target) && !$("modeloBotao").contains(ev.target)) menu.hidden = true;
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") $("modeloMenu").hidden = true;
+});
+
+// ---------- Marca de segurança (a conversa leu página) ----------
+
+let marcaInfo = null; // { hosts } quando a conversa leu página
+let marcaTimer = null;
+let pastaTrabalho = "";
+// Aviso rápido: sobe, fica uns segundos e desce. Os detalhes ficam no quadro da conversa (gaveta Segurança).
+function avisarMarca() {
+  const sites = marcaInfo?.hosts?.length ? marcaInfo.hosts.join(", ") : "páginas da web";
+  $("marca").textContent = `🛡️ Esta conversa leu ${sites}: agora comandos fora da pasta, programas e rede pedem aprovação.`;
+  $("marca").hidden = false;
+  clearTimeout(marcaTimer);
+  marcaTimer = setTimeout(() => ($("marca").hidden = true), 2800);
+}
+
+// ---------- Gasto da conversa (botão na linha de status, quadro e gaveta por modelo) ----------
+
+let usoAtual = null;
+const fmtTok = (n) => (n >= 1000 ? `${(n / 1000).toLocaleString("pt-BR", { maximumFractionDigits: n >= 100000 ? 0 : 1 })}k` : String(Math.round(n || 0)));
+const fmtUsd = (v) => `US$ ${(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: v > 0 && v < 0.01 ? 4 : v < 1 ? 3 : 2, maximumFractionDigits: v > 0 && v < 0.01 ? 4 : v < 1 ? 3 : 2 })}`;
+const fmtPct = (p) => (typeof p === "number" ? `≈${p.toLocaleString("pt-BR", { maximumFractionDigits: p < 1 ? 2 : 1 })}%` : null);
+const fmtHora = (t) => new Date(t).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+const fmtReinicio = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const hoje = new Date().toDateString() === d.toDateString();
+  return hoje ? `hoje ${fmtHora(d)}` : d.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+};
+const TAREFAS = { perguntar_pagina: "pergunta sobre a página", saida_bash: "resumo de saída de comando", saida_read: "resumo de arquivo",
+  resumo_conversa: "resumo pra continuar", titulo: "título" };
+
+// Gaveta que abre e fecha crescendo/encolhendo (altura até "auto" ainda não anima só com CSS no Firefox): a
+// setinha gira na hora; a altura anima 0,16 s; ao fechar, o <details> só fecha depois de encolher.
+function gavetaSuave(details, summary, corpo) {
+  summary.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    corpo.getAnimations().forEach((a) => a.cancel());
+    if (!details.open) {
+      details.open = true;
+      details.classList.add("aberta");
+      corpo.animate([{ height: "0px", opacity: 0 }, { height: `${corpo.scrollHeight}px`, opacity: 1 }], { duration: 160, easing: "ease-out" });
+    } else {
+      details.classList.remove("aberta");
+      const a = corpo.animate([{ height: `${corpo.scrollHeight}px`, opacity: 1 }, { height: "0px", opacity: 0 }], { duration: 160, easing: "ease-out" });
+      a.onfinish = () => (details.open = false);
+    }
+  });
+}
+
+function atualizarUsoBotao() {
+  const b = $("usoBotao");
+  const temUso = usoAtual && (usoAtual.custo > 0 || usoAtual.contexto > 0);
+  if (!temUso && !marcaInfo) {
+    b.hidden = true;
+    return;
+  }
+  b.hidden = false;
+  b.textContent = (marcaInfo ? "🛡️ " : "") + (temUso ? `contexto ~${fmtTok(usoAtual.contexto || tamanho)} · ${fmtUsd(usoAtual.custo)}` : "segurança");
+  b.title = marcaInfo ? "Esta conversa leu páginas da web: ver gasto e segurança" : "Ver o gasto desta conversa";
+}
+
+function linha(pai, partes, classe = "u-linha") {
+  const d = document.createElement("div");
+  d.className = classe;
+  for (const [txt, forte] of partes) {
+    if (forte) {
+      const b = document.createElement("b");
+      b.textContent = txt;
+      d.append(b);
+    } else d.append(document.createTextNode(txt));
+  }
+  pai.append(d);
+  return d;
+}
+
+const pctTexto = (pct) => [fmtPct(pct?.cinco) && `${fmtPct(pct.cinco)} da janela de 5 h`, fmtPct(pct?.semana) && `${fmtPct(pct.semana)} da semana`].filter(Boolean).join(" · ");
+
+function mostrarQuadroUso() {
+  const q = $("usoQuadro");
+  q.replaceChildren();
+  const u = usoAtual || { contexto: 0, custo: 0, pct: {}, modelos: [], auxiliar: null, plano: null };
+  if (!usoAtual && !marcaInfo) {
+    q.hidden = true;
+    return;
+  }
+  const topo = document.createElement("div");
+  topo.className = "u-topo";
+  topo.append(document.createTextNode("Esta conversa"));
+  const x = document.createElement("button");
+  x.textContent = "✕";
+  x.title = "Fechar";
+  x.addEventListener("click", () => (q.hidden = true));
+  topo.append(x);
+  q.append(topo);
+  linha(q, [["Contexto: ", false], [`~${fmtTok(u.contexto || tamanho)} tokens`, true], [" (o que cada mensagem relê)", false]]);
+  const pt = pctTexto(u.pct);
+  linha(q, [["Total: ", false], [fmtUsd(u.custo), true], [pt ? ` · ${pt}` : u.plano ? " · % do plano: ainda aprendendo" : "", false]]);
+
+  const gaveta = (titulo, resumo, itens) => {
+    const d = document.createElement("details");
+    const s = document.createElement("summary");
+    const b = document.createElement("b");
+    b.textContent = titulo;
+    s.append(setinha(), b, document.createTextNode(` — ${resumo}`));
+    const corpo = document.createElement("div");
+    corpo.className = "u-corpo";
+    for (const it of itens) linha(corpo, [[it, false]], "u-cham");
+    d.append(s, corpo);
+    gavetaSuave(d, s, corpo);
+    q.append(d);
+  };
+  for (const m of u.modelos || []) {
+    const pm = pctTexto(m.pct);
+    gaveta(m.nome, `${m.chamadas} chamada${m.chamadas === 1 ? "" : "s"} · ${fmtUsd(m.custo)}${pm ? ` · ${pm}` : ""}`, [
+      `${fmtTok(m.lidos)} lidos (${fmtTok(m.doCache)} do cache, que custa 1/10) · ${fmtTok(m.escritos)} escritos`,
+      ...(m.detalhes || []).slice().reverse().map((d) => `${fmtHora(d.quando)} · leu ${fmtTok(d.lidos)} (${fmtTok(d.doCache)} do cache) · escreveu ${fmtTok(d.escritos)} · ${fmtUsd(d.custo)}` +
+        (d.ferramentas?.length ? ` · ${d.ferramentas.join(", ")}` : "")),
+    ]);
+  }
+  if (u.auxiliar) {
+    const a = u.auxiliar;
+    const pa = pctTexto(a.pct);
+    gaveta(`${a.nome} (modelo auxiliar)`, `${a.chamadas} chamada${a.chamadas === 1 ? "" : "s"} · ${fmtUsd(a.custo)}${pa ? ` · ${pa}` : ""}`,
+      (a.detalhes || []).slice().reverse().map((d) => `${fmtHora(d.quando)} · ${TAREFAS[d.tarefa] || d.tarefa} · ${fmtTok(d.entrada)} → ${fmtTok(d.saida)} tokens · ` +
+        `${fmtUsd(d.custo)}${d.ms ? ` · ${(d.ms / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} s` : ""}${d.provedor && d.provedor !== "assinatura" ? ` · ${d.provedor}` : ""}`));
+  }
+  if (u.plano) {
+    const p = u.plano;
+    const plano = document.createElement("div");
+    plano.className = "u-plano";
+    q.append(plano);
+    linha(plano, [[`Plano${p.tipo ? ` ${p.tipo[0].toUpperCase()}${p.tipo.slice(1)}` : ""} agora (conta inteira):`, true]]);
+    if (p.cinco) linha(plano, [[`Janela de 5 horas: ${p.cinco.pct}% usado${p.cinco.reinicia ? ` · reinicia ${fmtReinicio(p.cinco.reinicia)}` : ""}`, false]]);
+    if (p.semana) linha(plano, [[`Semana: ${p.semana.pct}% usado${p.semana.reinicia ? ` · reinicia ${fmtReinicio(p.semana.reinicia)}` : ""}`, false]]);
+  }
+  // Segurança: se a conversa leu página e o que isso muda (resumo na linha; detalhe na gaveta).
+  const seg = document.createElement("details");
+  seg.className = "u-info u-seg";
+  const segTit = document.createElement("summary");
+  segTit.append(setinha(), document.createTextNode(marcaInfo
+    ? `🛡️ Segurança: leu ${marcaInfo.hosts.length ? marcaInfo.hosts.join(", ") : "páginas da web"}`
+    : "Segurança: ainda não leu nenhuma página"));
+  const segCorpo = document.createElement("div");
+  segCorpo.className = "u-corpo";
+  seg.append(segTit, segCorpo);
+  gavetaSuave(seg, segTit, segCorpo);
+  const pasta = pastaTrabalho ? ` (${pastaTrabalho})` : "";
+  const itensSeg = marcaInfo ? [
+    "Depois que a conversa lê conteúdo de uma página, ela fica marcada até o fim (e continua marcada se você retomar ela " +
+      "depois): o que veio da página pode tentar mandar o Claude fazer coisas (prompt injection).",
+    `Passa direto: ler, criar, editar, mover e mandar pra lixeira arquivos dentro da pasta de trabalho${pasta}.`,
+    "Pede sua aprovação: arquivo que começa com ponto, CLAUDE.md e arquivos sensíveis (chaves, .env, senhas), rm, rodar " +
+      "programa ou script, acesso à rede e qualquer coisa fora da pasta. Os \"sempre permitir\" ficam suspensos.",
+    "No navegador: clicar, digitar, enviar e navegar continuam pedindo confirmação; a aprovação \"agir em um site por N min\" " +
+      "cai quando o Claude lê outro site ou usa qualquer ferramenta fora do navegador.",
+    "O que vem das páginas chega ao Claude marcado como dado, não como instrução. Mesmo assim, confira o que aprova.",
+  ] : [
+    "Enquanto a conversa não lê página nenhuma, valem as permissões normais do Claude Code (inclusive os \"sempre permitir\").",
+    "Na primeira página lida, ela fica marcada até o fim: aí comandos fora da pasta, programas e rede passam a pedir " +
+      "aprovação, e um aviso 🛡️ aparece rapidinho em cima da caixa de texto.",
+  ];
+  for (const t of itensSeg) linha(segCorpo, [[t, false]], "u-nota");
+  q.append(seg);
+
+  const info = document.createElement("details");
+  info.className = "u-info";
+  const infoTit = document.createElement("summary");
+  infoTit.append(setinha(), document.createTextNode("Como esses números são calculados"));
+  const infoCorpo = document.createElement("div");
+  infoCorpo.className = "u-corpo";
+  info.append(infoTit, infoCorpo);
+  gavetaSuave(info, infoTit, infoCorpo);
+  linha(infoCorpo, [["Tokens e US$ são exatos (US$ a preço de API, a régua pra comparar). O plano só informa a % da conta inteira, " +
+    "em número inteiro: a % por conversa/modelo (≈) é estimativa, aprendida com quanto a janela sobe a cada mensagem do " +
+    "painel; usar o Claude em outro lugar ao mesmo tempo puxa a estimativa pra cima.", false]], "u-nota");
+  q.append(info);
+  q.hidden = false;
+}
+
+$("usoBotao").addEventListener("click", (ev) => {
+  ev.stopPropagation();
+  if ($("usoQuadro").hidden) mostrarQuadroUso();
+  else $("usoQuadro").hidden = true;
+});
+document.addEventListener("click", (ev) => {
+  const q = $("usoQuadro");
+  if (!q.hidden && !q.contains(ev.target) && ev.target !== $("usoBotao")) q.hidden = true;
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") $("usoQuadro").hidden = true;
+});
+
+function zerarUso() {
+  usoAtual = null;
+  $("usoQuadro").hidden = true;
+  atualizarUsoBotao();
+}
+
 // ---------- Mensagens do programa local / background ----------
 
 function receber(m) {
   switch (m?.type) {
+    case "aba_estado":
+      mostrarAba(m);
+      break;
+    case "tamanho":
+      mostrarTamanho(Number(m.tokens), !!m.longa);
+      break;
+    case "uso":
+      if (m.sessionId && atual.sessionId && m.sessionId !== atual.sessionId) break; // de outra conversa
+      usoAtual = m;
+      atualizarUsoBotao();
+      if (!$("usoQuadro").hidden) mostrarQuadroUso();
+      break;
+    case "resumindo":
+      status("resumindo a conversa pra continuar numa nova…");
+      break;
+    case "continuada": {
+      // A conversa antiga foi resumida e fechada: começa uma nova, mostrando o resumo que vai junto da próxima mensagem.
+      limpar();
+      zerarUso();
+      atual = { sessionId: null, title: "Nova conversa" };
+      $("titulo").textContent = atual.title;
+      mostrarTamanho(0, false);
+      const d = document.createElement("div");
+      d.className = "msg assistant resumo";
+      pintar(d, `**Continuando de “${String(m.de ?? "").slice(0, 80)}”.** Este resumo vai junto da sua próxima mensagem:\n\n${String(m.resumo ?? "")}`);
+      some(d);
+      setOcupado(false);
+      entrada.focus();
+      break;
+    }
+    case "modelo":
+      modeloInfo = typeof m.nome === "string"
+        ? { id: String(m.modelo || ""), nome: m.nome.slice(0, 40), modelos: Array.isArray(m.modelos) ? m.modelos.slice(0, 6) : [] }
+        : null;
+      $("modeloNome").textContent = modeloInfo?.nome || "Modelo";
+      if (!$("modeloMenu").hidden) mostrarModelos();
+      break;
     case "panel_ready":
       status("abrindo o Claude…");
       enviar({ type: "list" });
       break;
     case "ready":
+      pastaTrabalho = String(m.workdir || "");
       status(`pronto · pasta: ${m.workdir}`);
       break;
     case "list":
@@ -370,8 +728,10 @@ function receber(m) {
       cartoes.get(m.id)?.fechar(RESPOSTA[m.decision] || "");
       break;
     case "marked":
-      $("marca").hidden = false;
-      $("marca").textContent = `🛡️ Esta conversa leu: ${(m.hosts || []).join(", ") || "páginas da web"}. Comandos fora da pasta, programas e rede pedem aprovação.`;
+      marcaInfo = { hosts: Array.isArray(m.hosts) ? m.hosts.map(String).slice(0, 20) : [] };
+      avisarMarca();
+      atualizarUsoBotao();
+      if (!$("usoQuadro").hidden) mostrarQuadroUso();
       break;
     case "error":
       erro(String(m.message ?? "erro"));
@@ -392,10 +752,14 @@ function limpar() {
   bolha = null;
   cartoes.clear();
   $("marca").hidden = true;
+  clearTimeout(marcaTimer);
+  marcaInfo = null;
 }
 
 function novaConversa() {
   limpar();
+  zerarUso();
+  mostrarTamanho(0, false);
   atual = { sessionId: null, title: "Nova conversa" };
   $("titulo").textContent = atual.title;
   enviar({ type: "new" });
@@ -414,7 +778,9 @@ function abrirConversa(m) {
     bolha = null;
   }
   if (m.marked) receber({ type: "marked", hosts: m.hosts });
-  $("historico").hidden = true;
+  usoAtual = m.uso && typeof m.uso === "object" ? m.uso : null;
+  mostrarTamanho(Number(m.tokens) || 0, !!m.longa);
+  setHistorico(false);
   conversa.hidden = false;
   setOcupado(false);
   // As mensagens foram montadas com a conversa escondida (rolar não tinha efeito): agora vai pro fim, sem animação.
@@ -530,17 +896,42 @@ entrada.addEventListener("keydown", (e) => {
     mandar();
   }
 });
-$("btnNova").addEventListener("click", novaConversa);
+// Nova conversa fica no topo da lista de conversas (☰), como no claude.ai.
+$("btnNova").addEventListener("click", () => {
+  setHistorico(false);
+  conversa.hidden = false;
+  novaConversa();
+});
+$("btnContinuar").addEventListener("click", () => {
+  if (ocupado) return;
+  $("longaAviso").hidden = true;
+  enviar({ type: "continuar_nova" });
+});
 // O ajuste da barra lateral (firefox/claude-firefox.css) esconde o cabeçalho do Firefox (⌄ ✕) neste painel; então o painel tem o próprio ✕.
 $("btnFechar").addEventListener("click", () => browser.sidebarAction.close());
-$("btnHistorico").addEventListener("click", () => {
-  $("historico").hidden = false;
-  conversa.hidden = true;
-  enviar({ type: "list" });
+// Lista de conversas: o ☰ abre e fecha (vira X com ela aberta).
+function setHistorico(aberto) {
+  $("historico").hidden = !aberto;
+  // Ao fechar, as linhas giradas reaparecem ainda em X e só então voltam pro ☰ animando (mesmo cuidado da setinha).
+  if (!aberto && $("btnHistorico").classList.contains("x-pronto")) {
+    $("btnHistorico").classList.remove("x-pronto");
+    void $("btnHistorico").offsetWidth;
+  }
+  $("btnHistorico").classList.remove("x-pronto");
+  document.body.classList.toggle("hist-aberto", aberto);
+  $("btnHistorico").setAttribute("aria-expanded", String(aberto));
+  $("btnHistorico").title = aberto ? "Fechar a lista de conversas" : "Conversas anteriores";
+  if (!aberto) conversa.hidden = false;
+}
+
+// Terminou de girar com a lista aberta: troca pelo X fixo (igual ao ✕ de fechar).
+$("btnHistorico").querySelector(".l1").addEventListener("transitionend", (ev) => {
+  if (ev.propertyName === "transform" && document.body.classList.contains("hist-aberto")) $("btnHistorico").classList.add("x-pronto");
 });
-$("btnFecharHist").addEventListener("click", () => {
-  $("historico").hidden = true;
-  conversa.hidden = false;
+$("btnHistorico").addEventListener("click", () => {
+  if (!$("historico").hidden) return setHistorico(false);
+  setHistorico(true); // a lista fica por cima da conversa (camada), sem esconder ela
+  enviar({ type: "list" });
 });
 $("titulo").addEventListener("click", () => {
   if (atual.sessionId) renomear(atual.sessionId, $("titulo"));

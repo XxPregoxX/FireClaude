@@ -135,6 +135,26 @@ check("chat sem marca: valem as permissões normais (não interfere)",
 check("chat com pasta = home: nada livre", decide({ raw: pedido("Write", { file_path: path.join(os.homedir(), "x.txt") }), pid: 6161,
   dir: marcas, projectDir: os.homedir(), chat: true })?.decision === "ask");
 
+console.log("\n# Saída completa guardada pelo painel (resumo do modelo auxiliar)");
+{
+  const saidas = path.join(marcas, "saidas");
+  fs.mkdirSync(saidas, { mode: 0o700 });
+  const boa = path.join(saidas, "saida-0123456789abcdef.txt");
+  fs.writeFileSync(boa, "saída completa");
+  const outra = path.join(saidas, "segredo.txt");
+  fs.writeFileSync(outra, "x");
+  const link = path.join(saidas, "saida-fedcba9876543210.txt");
+  fs.symlinkSync(path.join(tmp, "fora.txt"), link);
+  fs.writeFileSync(path.join(tmp, "fora.txt"), "fora");
+  check("painel marcado: Read da saída guardada passa", dc("Read", { file_path: boa })?.decision === "allow");
+  check("outro nome na mesma pasta pede", dc("Read", { file_path: outra })?.decision === "ask");
+  check("symlink com o nome certo apontando pra fora pede", dc("Read", { file_path: link })?.decision === "ask");
+  check("caminho relativo ou com .. pede", dc("Read", { file_path: "saidas/saida-0123456789abcdef.txt" })?.decision === "ask" &&
+    dc("Read", { file_path: path.join(saidas, "..", "taint-6161") })?.decision === "ask");
+  check("Bash cat na saída guardada continua pedindo (só Read é livre)", dc("Bash", { command: `cat ${boa}` })?.decision === "ask");
+  check("Write na saída guardada pede", dc("Write", { file_path: boa, content: "x" })?.decision === "ask");
+}
+
 console.log("\n# Comando do hook: travou, quebrou ou sumiu => exit 2 (bloqueia no Claude Code)");
 const lento = path.join(tmp, "lento.mjs");
 const quebra = path.join(tmp, "quebra.mjs");

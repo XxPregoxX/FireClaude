@@ -22,7 +22,8 @@
 
   <h2>Sites permitidos</h2>
   <p>O Claude só abre, lê e mexe nestes sites. Fora deles a extensão não age, e quem garante isso é o próprio Firefox
-  (são permissões da extensão). Também dá pra adicionar clicando no ícone da extensão numa aba do site.</p>
+  (são permissões da extensão). Também dá pra adicionar numa aba do site: botão direito no ícone do Claude →
+  marque "Claude pode agir nesta aba", ou o botão "Permitir este site" no painel. (O clique normal no ícone abre e fecha o painel.)</p>
   <ul id="sites"></ul>
   <form id="addForm">
     <input type="text" id="newSite" placeholder="exemplo.com ou *.exemplo.com" spellcheck="false">
@@ -38,6 +39,40 @@
   dentro da sua pasta pessoal; vazio = <code>~/Documentos/Projetos</code>.
   <strong>Não use uma pasta sincronizada ou compartilhada</strong> (Dropbox, Nextcloud, Google Drive): lá, criar um
   arquivo já é mandar pra fora.</small></p>
+
+  <p>Modelo: <select id="chatModelo">
+    <option value="claude-sonnet-5-5">Sonnet 5.5 (padrão: metade do preço, bom pro dia a dia)</option>
+    <option value="claude-opus-5-5">Opus 5.5 (mais capaz, o dobro do preço)</option>
+    <option value="claude-haiku-5-5">Haiku 5.5 (bem mais barato; pra conversa simples)</option>
+  </select> <span id="modeloOk" class="ok"></span></p>
+  <p><small>Vale pras conversas novas. Pra trocar numa conversa (antes ou depois de começar), use o seletor de modelo dentro da caixa de texto do painel.</small></p>
+  <p>Esforço: <select id="chatEsforco">
+    <option value="low">Baixo (mais rápido e barato; erra mais em tarefa de várias etapas)</option>
+    <option value="medium">Médio (padrão)</option>
+    <option value="high">Alto</option>
+    <option value="xhigh">Muito alto (tarefa difícil; mais lento e caro)</option>
+  </select> <span id="esforcoOk" class="ok"></span></p>
+  <p><small>Quanto o Claude pensa e confere antes de responder. Vale pras conversas novas.</small></p>
+
+  <h3>Modelo auxiliar</h3>
+  <p><small>Um modelo barato que lê e condensa conteúdo grande (página inteira, saída grande de comando ou arquivo,
+  resumo pra continuar conversa, título) pra isso não entrar inteiro na conversa principal. Ele não tem ferramenta
+  nenhuma, não decide nem age, e o que ele devolve a partir de página continua marcado como não confiável.</small></p>
+  <p><label><input type="checkbox" id="workerLigado"> Ligado</label></p>
+  <p>Como ele roda: <select id="workerProvedor">
+    <option value="assinatura">Pela assinatura (o seu login do Claude Code; conta no limite de uso dela)</option>
+    <option value="api">Chave de API à parte (cobrada na conta da chave)</option>
+    <option value="local">Modelo local (Ollama, llama.cpp; só no seu computador)</option>
+  </select></p>
+  <p>Modelo Claude: <input type="text" id="workerModelo" placeholder="claude-haiku-5-5" spellcheck="false"></p>
+  <p>Chave da API: <input type="password" id="workerChave" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+    <button id="salvarChave">Salvar chave</button> <button id="apagarChave">Apagar</button> <span id="chaveStatus" class="ok"></span></p>
+  <p><small>A chave fica num arquivo só seu (~/.config/claude-firefox/worker-api-key), não na extensão, e nunca vai pro Claude
+  do painel.</small></p>
+  <p>Modelo local: endereço <input type="text" id="workerLocalUrl" placeholder="http://127.0.0.1:11434/v1" spellcheck="false">
+    modelo <input type="text" id="workerLocalModelo" placeholder="ex.: qwen2.5:7b" spellcheck="false"></p>
+  <p><small>Só endereço local (127.0.0.1/localhost): conteúdo de página não sai do computador.</small></p>
+  <button id="salvarWorker">Salvar modelo auxiliar</button> <span id="workerOk" class="ok"></span>
 
   <h3>Jeito de conversar</h3>
   <p><small>Como o Claude do painel fala com você. Isso só muda o estilo das respostas: as regras de segurança, as
