@@ -359,6 +359,17 @@ function pedidoComputador(m) {
   ], botoes, (decision) => enviar({ type: "permission_answer", id: m.id, decision }));
 }
 
+// Setinha das gavetas (ferramenta, gasto): aponta pra direita e gira 90° quando abre.
+function setinha() {
+  const doc = new DOMParser().parseFromString(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>',
+    "image/svg+xml");
+  const span = document.createElement("span");
+  span.className = "chev";
+  span.append(document.importNode(doc.documentElement, true));
+  return span;
+}
+
 // ---------- Aba ativa (o estado vem do background; título e endereço da página nunca) ----------
 
 let atalhoPrint = "Alt+Shift+P";

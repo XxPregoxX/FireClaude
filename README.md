@@ -1,36 +1,56 @@
 # FireClaude (unofficial)
 
-A Firefox extension plus a local MCP server that let [Claude Code](https://claude.com/claude-code) control your
-browser: open tabs, read pages, click, type, take screenshots, read the console and, if you turn it on, run JavaScript.
-It also adds a **sidebar panel** (Alt+Shift+C) where you can chat with Claude Code directly inside Firefox, without a
-terminal.
+Chat with [Claude Code](https://claude.com/claude-code) in a Firefox sidebar, let it read the page you are looking at,
+and let it act in the browser, with your approval for every step that matters.
+
+![Picking an element on a page and sending it to Claude in the sidebar](docs/img/apontar.png)
 
 > **Unofficial project.** This is a personal project. It is not made, endorsed or supported by Anthropic, and it
 > has no affiliation with Anthropic or with Mozilla. "Claude" and "Claude Code" are Anthropic's products; this
 > extension only talks to the Claude Code CLI you already have installed.
 
-The extension UI, tool descriptions and code comments are in **Brazilian Portuguese**.
+## Features
 
-```
-Claude Code (terminal) ──stdio──▶ server/index.js ──WebSocket 127.0.0.1:47823──▶ extension (Firefox)
-Sidebar panel ⇄ extension ⇄ native messaging ⇄ chat/host.mjs ──Agent SDK──▶ Claude Code (claude-wrapper.sh)
-       ▲
-       └── hooks/guard.js (PreToolUse hook, on both paths) ◀── per-session mark in $XDG_RUNTIME_DIR/claude-firefox/
-```
+1. **Claude Code in a Firefox sidebar** (Alt+Shift+C). Chat without a terminal, using your own Claude Code plan or API
+   key. Markdown replies, past conversations, approvals as buttons inside the conversation.
+2. **Reads the page you are looking at.** Say "this page" and it reads the active tab, no click needed, on the sites
+   you allowed.
+3. **Point at exactly what it should read.** An Inspect-like picker highlights elements under the mouse; or select
+   text and right-click *Mandar a seleção pro Claude*. Only that part goes to Claude.
+4. **Acts in the browser with your approval.** Opens tabs, navigates, clicks, types, picks options. Each action asks
+   first, or you allow one site for a few minutes; form submissions, downloads, JavaScript and other sites always ask.
+5. **A lock after reading a page.** Once a conversation has read web content, running programs, network access and
+   anything outside the working folder ask for approval, so a page can't quietly steer Claude into your machine.
+   Hidden text is skipped and page content is marked as untrusted data.
+6. **Cost and plan at a glance.** Context size and cost per model and per call, plus your plan's 5-hour and weekly
+   usage, one click away in the status line.
+7. **Pick the model** (Sonnet 5.5, Opus 5.5, Haiku 5.5) before the first message or in the middle of a conversation.
+8. **A helper model that saves tokens.** Haiku answers quick questions about a page and condenses large command or
+   file output, without tools and without seeing the conversation.
+9. **Also for Claude Code in the terminal.** A local MCP server gives it the same browser tools, under the same rules.
 
-Both paths expose the same browser tools (`server/browser-tools.mjs`); only the bridge differs.
+The extension UI is in **Brazilian Portuguese**.
 
-**Tools.** Read-only, never ask for confirmation: `read_page`, `query` (elements by CSS selector, with visible text
-and the attributes you ask for), `extrair_tabela` (tables), `extrair_links` (links), `estado_formulario` (form state),
-`esperar_por` (wait for an element), `scroll`, `console_logs`, `tabs_list`, `screenshot`, `wait`, and, in the sidebar
-panel only, `perguntar_pagina` (a quick question about the page, answered by the helper model; see below). Actions, which go through
-the approval flow below: `tab_new`, `navigate`, `click`, `type`, `press_key`, `select_option`, `tab_close` and
-`javascript`. The read tools are fixed extension code: their parameters are plain data (a selector goes to
-`querySelectorAll` and never becomes code), passwords come back masked, and none of them read cookies, localStorage,
-sessionStorage or IndexedDB. They also work on sites whose CSP blocks the `javascript` tool. Large outputs are cut at
-30,000 characters, with a notice.
+## Screenshots
 
-## Requirements
+![Sidebar: approval card for a click, cost per model and plan usage, approval for a command after reading a page](docs/img/painel.png)
+
+<table>
+<tr>
+<td><img src="docs/img/seguranca.png" width="360" alt="Security drawer: what this conversation read and what now asks for approval"></td>
+<td><img src="docs/img/modelo.png" width="360" alt="Model picker inside the input box"></td>
+</tr>
+<tr>
+<td>Security drawer: what the conversation read and what now asks for approval.</td>
+<td>Model picker inside the input box.</td>
+</tr>
+</table>
+
+Screenshots use a made-up store page and conversation.
+
+## Installation
+
+### Requirements
 
 - Linux with Firefox 142 or newer. Developed and tested on Fedora with Firefox 157.
 - Node.js 18 or newer (tested on 22), and npm.
@@ -38,43 +58,21 @@ sessionStorage or IndexedDB. They also work on sites whose CSP blocks the `javas
   in `~/.local/bin/claude`). The sidebar panel runs that same CLI through the Claude Agent SDK, so it uses your own
   plan or API key.
 
-## Installation
+### Install
 
 ```sh
-git clone <this repo> claude-firefox
+git clone https://github.com/XxPregoxX/FireClaude.git claude-firefox
 cd claude-firefox
 (cd server && npm ci)
-./instalar-extensao.sh          # asks for sudo; see below
+./instalar-extensao.sh          # asks for sudo; see "Installation details"
 ```
 
 Then restart Firefox and accept enabling the extension.
 
-`instalar-extensao.sh` does the following:
+What the script does, and how to install on distributions other than Fedora: see
+[Installation details](#installation-details).
 
-1. **Bridge token.** It creates a random token in `~/.config/claude-firefox/token` (mode 0600) and copies it into
-   `extension/token.json`, which git ignores.
-2. **Sidebar host.** It installs `chat/` dependencies and registers the native messaging host `claude_firefox_chat` in
-   `~/.mozilla/native-messaging-hosts/` and `~/.config/mozilla/native-messaging-hosts/`. Only this extension's ID may
-   launch it.
-3. **Sidebar look.** For each Firefox profile it copies `firefox/claude-firefox.css` into `<profile>/chrome/`, imports
-   it from `userChrome.css`, and enables `toolkit.legacyUserProfileCustomizations.stylesheets`. This removes the gap
-   around the sidebar and Firefox's own header above extension panels; the Claude panel has its own close button. A
-   profile whose `chrome/` folder is a symlink (for example, to a theme) is left alone. These changes take effect
-   after a restart.
-4. **Extension.** It packs the extension and installs the `.xpi` in Firefox's system-wide extension directory,
-   `/usr/lib64/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}/` (owner root, your group, mode 640, since
-   the file contains the token). Fedora's Firefox accepts unsigned extensions from that scope, which is why sudo is
-   needed.
-
-On other distributions that path or the unsigned-extension policy may differ. Instead, run
-`./instalar-extensao.sh --token`, which does steps 1–3 without sudo, and load the extension from
-`about:debugging` → "This Firefox" → "Load Temporary Add-on…" → `extension/manifest.json`. A temporary add-on goes
-away when Firefox closes. Firefox Developer Edition, Nightly or ESR with `xpinstall.signatures.required = false` can
-install the `.xpi` permanently.
-
-Run the script again whenever you change anything under `extension/`.
-
-### Register the MCP server
+### Register the MCP server (for Claude Code in the terminal)
 
 ```sh
 claude mcp add --scope user claude-firefox -- node /path/to/claude-firefox/server/index.js
@@ -175,6 +173,29 @@ Open a new Claude Code session after installing.
   - the per-task approval length (15 minutes by default);
   - local network access (off by default);
   - the `javascript` tool (off by default).
+
+## Tools
+
+Read-only, never ask for confirmation: `read_page`, `query` (elements by CSS selector, with visible text
+and the attributes you ask for), `extrair_tabela` (tables), `extrair_links` (links), `estado_formulario` (form state),
+`esperar_por` (wait for an element), `scroll`, `console_logs`, `tabs_list`, `screenshot`, `wait`, and, in the sidebar
+panel only, `perguntar_pagina` (a quick question about the page, answered by the helper model; see below). Actions, which go through
+the approval flow below: `tab_new`, `navigate`, `click`, `type`, `press_key`, `select_option`, `tab_close` and
+`javascript`. The read tools are fixed extension code: their parameters are plain data (a selector goes to
+`querySelectorAll` and never becomes code), passwords come back masked, and none of them read cookies, localStorage,
+sessionStorage or IndexedDB. They also work on sites whose CSP blocks the `javascript` tool. Large outputs are cut at
+30,000 characters, with a notice.
+
+## How it works
+
+```
+Claude Code (terminal) ──stdio──▶ server/index.js ──WebSocket 127.0.0.1:47823──▶ extension (Firefox)
+Sidebar panel ⇄ extension ⇄ native messaging ⇄ chat/host.mjs ──Agent SDK──▶ Claude Code (claude-wrapper.sh)
+       ▲
+       └── hooks/guard.js (PreToolUse hook, on both paths) ◀── per-session mark in $XDG_RUNTIME_DIR/claude-firefox/
+```
+
+Both paths expose the same browser tools (`server/browser-tools.mjs`); only the bridge differs.
 
 ## Security model
 
@@ -310,6 +331,33 @@ matter.
   (`activeTab`) even if you decline the permission prompt. In that case, the extension's own checks are what block it.
 - **Review what you approve.** The detector is heuristic. The defense that actually holds is the hook plus your
   approvals.
+
+## Installation details
+
+`instalar-extensao.sh` does the following:
+
+1. **Bridge token.** It creates a random token in `~/.config/claude-firefox/token` (mode 0600) and copies it into
+   `extension/token.json`, which git ignores.
+2. **Sidebar host.** It installs `chat/` dependencies and registers the native messaging host `claude_firefox_chat` in
+   `~/.mozilla/native-messaging-hosts/` and `~/.config/mozilla/native-messaging-hosts/`. Only this extension's ID may
+   launch it.
+3. **Sidebar look.** For each Firefox profile it copies `firefox/claude-firefox.css` into `<profile>/chrome/`, imports
+   it from `userChrome.css`, and enables `toolkit.legacyUserProfileCustomizations.stylesheets`. This removes the gap
+   around the sidebar and Firefox's own header above extension panels; the Claude panel has its own close button. A
+   profile whose `chrome/` folder is a symlink (for example, to a theme) is left alone. These changes take effect
+   after a restart.
+4. **Extension.** It packs the extension and installs the `.xpi` in Firefox's system-wide extension directory,
+   `/usr/lib64/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}/` (owner root, your group, mode 640, since
+   the file contains the token). Fedora's Firefox accepts unsigned extensions from that scope, which is why sudo is
+   needed.
+
+On other distributions that path or the unsigned-extension policy may differ. Instead, run
+`./instalar-extensao.sh --token`, which does steps 1–3 without sudo, and load the extension from
+`about:debugging` → "This Firefox" → "Load Temporary Add-on…" → `extension/manifest.json`. A temporary add-on goes
+away when Firefox closes. Firefox Developer Edition, Nightly or ESR with `xpinstall.signatures.required = false` can
+install the `.xpi` permanently.
+
+Run the script again whenever you change anything under `extension/`.
 
 ## Tests
 

@@ -32,6 +32,11 @@ node test/chat-host.mjs >"$TMP/chat.log" || { cat "$TMP/chat.log"; exit 1; }
 echo "programa do painel: $(tail -1 "$TMP/chat.log")"
 node test/worker.mjs >"$TMP/worker.log" || { cat "$TMP/worker.log"; exit 1; }
 echo "modelo auxiliar: $(tail -1 "$TMP/worker.log")"
+# JS: nome usado sem estar definido (o eslint vem com o web-ext em tools/).
+if [ -x tools/node_modules/.bin/eslint ]; then
+  tools/node_modules/.bin/eslint --no-config-lookup -c test/eslint.config.mjs extension/*.js chat/*.mjs server/*.mjs server/index.js hooks/guard.js test/*.mjs \
+    || { echo "JS: nome indefinido (acima)"; exit 1; }
+fi
 # CSS: comentário no meio de uma lista de seletores ("a, /* … */ b { … }") junta regras sem querer (já tirou a conversa
 # da tela uma vez).
 if grep -nPzo ',\s*/\*' extension/*.css >/dev/null; then echo "CSS: comentário dentro de lista de seletores"; grep -nP ',\s*/\*' extension/*.css; exit 1; fi
