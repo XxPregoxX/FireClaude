@@ -32,11 +32,13 @@
 
   <footer>
     <div id="marca" hidden></div>
-    <div id="longaAviso" hidden><span id="longaTexto"></span><button id="btnContinuar">Continuar em conversa nova</button></div>
+    <div id="longaAviso" hidden><span id="longaTexto"></span><button id="longaFechar" class="icone" title="Fechar este aviso (não aparece mais nesta conversa)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button><button id="btnContinuar">Continuar em conversa nova</button></div>
     <div id="abaAviso" hidden><span id="abaTexto"></span><button id="abaBotao" hidden></button></div>
     <div class="caixa-entrada">
+      <div id="anexos" hidden></div>
       <textarea id="entrada" rows="1" placeholder="Escreva pro Claude…"></textarea>
       <div class="barra-entrada">
+        <button id="btnApontar" class="icone" title="Apontar na página o que o Claude lê (ou botão direito na página → Mandar este elemento / a seleção pro Claude)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2" fill="currentColor"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/></svg></button>
         <button id="modeloBotao" class="modelo-botao" title="Escolher o modelo"><span id="modeloNome">Modelo</span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline class="seta-anim" points="6 9 12 15 18 9"/><polyline class="seta-cima" points="6 15 12 9 18 15"/></svg></button>
         <span class="espaco"></span>
         <button id="btnParar" class="enviar" title="Parar" hidden><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg></button>

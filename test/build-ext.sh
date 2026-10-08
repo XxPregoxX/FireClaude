@@ -89,6 +89,20 @@ browser.tabs.onUpdated.addListener(async (id, info) => {
   if (alvo) alternarAba(alvo);
 });
 
+// __apontar?tab=N&sel=CSS: o mesmo que o usuário escolher esse elemento no seletor (o clique de verdade, isTrusted, o
+// teste não faz). __selecionar?tab=N&sel=CSS: seleciona o conteúdo do elemento na página e manda como "a seleção".
+browser.tabs.onUpdated.addListener(async (id, info) => {
+  const u = info.url && new URL(info.url);
+  if (!u || u.host !== "loja.teste:8765" || !["/__apontar", "/__selecionar"].includes(u.pathname)) return;
+  const alvo = await browser.tabs.get(Number(u.searchParams.get("tab"))).catch(() => null);
+  const sel = u.searchParams.get("sel") || "";
+  if (!alvo) return;
+  if (u.pathname === "/__apontar") return apontarPraLer(alvo, "elemento", { seletorTeste: sel });
+  await browser.tabs.executeScript(alvo.id, { code: `{ const r = document.createRange(); r.selectNodeContents(document.querySelector(${JSON.stringify(sel)})); ` +
+    `getSelection().removeAllRanges(); getSelection().addRange(r); }` });
+  apontarPraLer(alvo, "selecao");
+});
+
 // Abrir http://loja.teste:8765/__ligar-js liga a ferramenta javascript (o teste não tem como clicar nas opções).
 browser.tabs.onUpdated.addListener((id, info) => {
   if (info.url && info.url.startsWith("http://loja.teste:8765/__ligar-js")) browser.storage.local.set({ allowJavascript: true });

@@ -191,11 +191,13 @@ footer { padding: 8px 10px 10px; background: var(--fundo); }
 #abaAviso { display: flex; align-items: center; gap: 8px; margin: 0 2px 8px; padding: 6px 10px; font-size: 12.5px; line-height: 1.4;
   color: var(--texto); background: var(--cartao); border: 1px solid var(--cartao-borda); border-radius: 10px; }
 #abaAviso[hidden] { display: none; }
-#longaAviso { display: flex; align-items: center; gap: 8px; margin: 0 2px 8px; padding: 6px 10px; font-size: 12.5px; line-height: 1.4;
-  color: var(--suave); background: var(--superficie); border: 1px solid var(--borda); border-radius: 10px; }
+/* Aviso de conversa longa: texto na largura toda, ✕ no canto, botão embaixo. */
+#longaAviso { display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 6px 4px; margin: 0 2px 8px; padding: 7px 6px 8px 10px;
+  font-size: 12.5px; line-height: 1.4; color: var(--suave); background: var(--superficie); border: 1px solid var(--borda); border-radius: 10px; }
 #longaAviso[hidden] { display: none; }
-#longaTexto { flex: 1; min-width: 0; }
-#btnContinuar { flex: none; font-size: 12.5px; padding: 3px 10px; }
+#longaTexto { min-width: 0; padding-top: 1px; }
+#longaFechar { width: 22px; height: 22px; border-radius: 6px; }
+#btnContinuar { grid-column: 1 / -1; justify-self: start; font-size: 12.5px; padding: 3px 10px; }
 .msg.resumo { border-left: 3px solid var(--borda); padding-left: 10px; color: var(--suave); }
 #abaTexto { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 #abaBotao { flex: none; font-size: 12.5px; padding: 3px 10px; background: var(--destaque); border-color: var(--destaque); color: var(--destaque-texto); }
@@ -213,6 +215,19 @@ footer { padding: 8px 10px 10px; background: var(--fundo); }
   display: block; margin: 0;
 }
 #entrada::placeholder { color: var(--suave); }
+/* Trechos apontados na página: etiquetas em cima do texto, cada uma com ✕. */
+#anexos { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 0 4px; }
+#anexos[hidden] { display: none; }
+#anexos .anexo { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; font-size: 12px; line-height: 1.4; color: var(--texto);
+  background: var(--bolha-user); border: 1px solid var(--borda); border-radius: 8px; padding: 2px 4px 2px 8px; }
+#anexos .anexo span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#anexos .anexo.esperando { border-color: var(--destaque); color: var(--destaque); }
+#anexos .anexo.falhou { color: var(--suave); padding-right: 8px; }
+#anexos .anexo.falhou span { white-space: normal; }
+#anexos .anexo button { border: none; padding: 0 4px; line-height: 1; color: var(--suave); background: none; font-size: 13px; }
+#anexos .anexo button:hover { color: var(--texto); }
+.caixa-entrada #btnApontar { width: 30px; height: 30px; }
+.msg.user .m-anexo { font-size: 12px; color: var(--suave); margin-top: 4px; overflow-wrap: anywhere; }
 .enviar {
   width: 32px; height: 32px; padding: 0; border-radius: 10px; border: none; flex: none;
   background: var(--destaque); color: var(--destaque-texto);

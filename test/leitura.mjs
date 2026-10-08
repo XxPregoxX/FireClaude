@@ -69,7 +69,7 @@ try {
     /regra 249 do agente/.test(r.text) && /FIM-DO-PROMPT/.test(r.text), r.text.slice(0, 600));
   check("texto escondido dentro do editor continua de fora", !/segredo-no-editavel/.test(r.text), r.text);
   check("textarea lida inteira (antes: 300 caracteres)", /textarea( "[^"]*")? value="linha 1/.test(r.text) && /FIM-DO-TEXTAREA/.test(r.text), r.text.slice(0, 600));
-  check("cartão clicável grande: listado e lido por dentro, com o link de dentro", /\[ref=\d+\] button "Cliente Alex/.test(r.text) &&
+  check("cartão clicável grande: listado e lido por dentro, com o link de dentro", /\[ref=\d+\] button "Pedido 123/.test(r.text) &&
     /FIM-DO-CARTAO/.test(r.text) && /\[ref=\d+\] link "link dentro do cartão"/.test(r.text), r.text.slice(-900));
   check("botão pequeno continua numa linha só", /\[ref=\d+\] button "OK"\n?/.test(r.text) && (r.text.match(/"OK"/g) || []).length === 1, r.text.slice(-300));
   r = await call("read_page", { tabId: ed, filter: "interactive" });

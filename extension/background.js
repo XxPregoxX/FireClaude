@@ -431,11 +431,19 @@ function alternarAba(tab) {
 const MENU_ABA = "claude-aba";
 const MENU_PRINT = "claude-print";
 const MENU_OPCOES = "claude-opcoes";
+const MENU_APONTAR = "claude-apontar"; // no ícone: escolher na página o que o Claude lê
+const MENU_ELEMENTO = "claude-elemento"; // botão direito na página: começa o seletor no elemento clicado
+const MENU_SELECAO = "claude-selecao"; // botão direito com texto selecionado
 function criarMenus() {
   browser.menus.removeAll().then(() => {
     browser.menus.create({ id: MENU_ABA, type: "checkbox", title: "Claude pode agir nesta aba", contexts: ["browser_action"] });
     browser.menus.create({ id: MENU_PRINT, type: "checkbox", title: "Claude pode tirar print desta página (até ela mudar)", contexts: ["browser_action"] });
+    browser.menus.create({ id: MENU_APONTAR, title: "Apontar na página o que o Claude lê…", contexts: ["browser_action"] });
     browser.menus.create({ id: "claude-sep", type: "separator", contexts: ["browser_action"] });
+    browser.menus.create({ id: MENU_ELEMENTO, title: "Mandar este elemento pro Claude…", contexts: ["page", "link", "image", "editable"],
+      documentUrlPatterns: ["http://*/*", "https://*/*"] });
+    browser.menus.create({ id: MENU_SELECAO, title: "Mandar a seleção pro Claude", contexts: ["selection"],
+      documentUrlPatterns: ["http://*/*", "https://*/*"] });
     browser.menus.create({ id: MENU_OPCOES, title: "Opções do Claude no Firefox", contexts: ["browser_action"] });
   }).catch(() => {});
 }
@@ -456,6 +464,13 @@ browser.menus.onShown.addListener((info, tab) => {
 });
 browser.menus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === MENU_OPCOES) return void browser.runtime.openOptionsPage();
+  if ([MENU_APONTAR, MENU_ELEMENTO, MENU_SELECAO].includes(info.menuItemId)) {
+    // O trecho aparece no painel: abre ele já (tem que ser direto no clique, que é o gesto do usuário).
+    browser.sidebarAction.open().catch(() => {});
+    if (info.frameId) return void avisarAnexo({ type: "anexo_falhou", message: "Dentro de um quadro (iframe) da página não dá; só na página principal." });
+    if (info.menuItemId === MENU_SELECAO) return void apontarPraLer(tab, "selecao");
+    return void apontarPraLer(tab, "elemento", Number.isInteger(info.targetElementId) ? { alvoMenu: info.targetElementId } : {});
+  }
   if (!tab) return;
   if (info.menuItemId === MENU_ABA) return alternarAba(tab);
   if (info.menuItemId === MENU_PRINT) {
@@ -902,6 +917,85 @@ async function liberarDoPainel(port, tabId) {
   refreshBadge(tab.id);
 }
 
+// ---------- O usuário aponta o que o Claude lê (elemento escolhido na página ou texto selecionado) ----------
+// Igual à leitura do painel: só site permitido (proibido e rede local, nunca), só a página de cima (não iframe). O
+// conteúdo fica aqui; o painel recebe só rótulo, tamanho e prévia, e manda de volta o id junto da mensagem. É aqui
+// que o conteúdo entra na mensagem pro programa do painel, que marca a conversa e embrulha como não confiável.
+const anexos = new Map(); // id -> { tipo, host, url, title, rotulo, texto, cortado, quando }
+let apontandoEm = null; // aba com o seletor aberto
+// Aviso que saiu com o painel ainda abrindo (o menu abre o painel no mesmo clique): entregue quando ele conectar.
+let avisosAnexo = [];
+function avisarAnexo(msg) {
+  if (!panelPorts.size) avisosAnexo = [...avisosAnexo.filter((a) => Date.now() - a.quando < 15000), { msg, quando: Date.now() }].slice(-5);
+  toPanel(msg);
+}
+
+function motivoDoSite(e) {
+  if (e?.code === "fora_da_lista") return "Esse site não está na lista de sites permitidos. Permita (botão no painel ou opções) e aponte de novo.";
+  if (e?.code === "proibido") return "Esse site está na lista de sites proibidos.";
+  if (e?.code === "rede_local") return "Rede local (localhost, 192.168…) só liberando nas opções.";
+  return "Isso só funciona em página da web (http/https).";
+}
+
+async function apontarPraLer(tab, tipo, args = {}) {
+  if (!tab) return;
+  try {
+    await checkUrl(tab.url);
+  } catch (e) {
+    return avisarAnexo({ type: "anexo_falhou", message: motivoDoSite(e) });
+  }
+  if (apontandoEm !== null && apontandoEm !== tab.id) execTool(apontandoEm, "cancelarSelecao", {}).catch(() => {});
+  let r;
+  try {
+    await ensureTools(tab.id);
+    if (tipo === "elemento") {
+      apontandoEm = tab.id;
+      avisarAnexo({ type: "apontando" });
+    }
+    r = await execTool(tab.id, tipo === "selecao" ? "lerSelecao" : "selecionarElemento", args);
+  } catch (e) {
+    return avisarAnexo({ type: "anexo_falhou", message: /não respondeu/.test(e.message) ? "A página mudou no meio. Tente de novo." : e.message });
+  } finally {
+    if (apontandoEm === tab.id) apontandoEm = null;
+  }
+  if (r?.cancelado) return avisarAnexo({ type: "anexo_falhou", cancelado: true });
+  // A página pode ter trocado de endereço (sem recarregar) enquanto o usuário escolhia: confere de novo.
+  const agora = await browser.tabs.get(tab.id).catch(() => null);
+  try {
+    if (!agora) throw new Error();
+    await checkUrl(agora.url);
+  } catch (e) {
+    return avisarAnexo({ type: "anexo_falhou", message: motivoDoSite(e) });
+  }
+  const host = hostOf(agora.url);
+  noteRead(host, sessions.chat); // conteúdo desse site vai pra conversa do painel (aprovação de outro site cai)
+  const texto = typeof r?.texto === "string" ? r.texto : "";
+  if (!texto.trim()) {
+    return avisarAnexo({ type: "anexo_falhou", message: tipo === "selecao" ? "A seleção não tem texto visível." : "Esse elemento não tem texto visível." });
+  }
+  for (const [id, a] of anexos) if (Date.now() - a.quando > 30 * 60000) anexos.delete(id);
+  while (anexos.size >= 10) anexos.delete(anexos.keys().next().value);
+  const id = crypto.randomUUID();
+  const rotulo = String(r.rotulo || "").slice(0, 80);
+  anexos.set(id, { tipo, host, url: String(r.url || agora.url).slice(0, 2000), title: String(r.title || "").slice(0, 300), rotulo, texto,
+    cortado: !!r.cortado, quando: Date.now() });
+  avisarAnexo({ type: "anexo", id, tipo, host, rotulo, chars: texto.length, cortado: !!r.cortado, previa: texto.slice(0, 200) });
+}
+
+// Mensagem do painel com anexos: troca os ids pelo conteúdo (cada um vai uma vez só).
+function comAnexos(msg) {
+  if (!Array.isArray(msg.anexos)) return msg;
+  const lista = [];
+  for (const id of msg.anexos.slice(0, 5)) {
+    const a = typeof id === "string" && anexos.get(id);
+    if (!a) continue;
+    anexos.delete(id);
+    const { quando, ...resto } = a;
+    lista.push(resto);
+  }
+  return { ...msg, anexos: lista };
+}
+
 function ensureNative() {
   if (nativePort) return nativePort;
   const port = browser.runtime.connectNative(NATIVE_HOST);
@@ -978,14 +1072,27 @@ browser.runtime.onConnect.addListener((port) => {
       if (["once", "window", "deny"].includes(msg.decision)) chatConfirms.get(msg.id)?.(msg.decision);
       return;
     }
+    if (msg?.type === "apontar") {
+      // Botão do painel: seletor na aba ativa da janela do painel.
+      if (Number.isInteger(port.janela)) {
+        browser.tabs.query({ active: true, windowId: port.janela }).then(([t]) => apontarPraLer(t, "elemento")).catch(() => {});
+      }
+      return;
+    }
+    if (msg?.type === "apontar_cancelar") {
+      if (apontandoEm !== null) execTool(apontandoEm, "cancelarSelecao", {}).catch(() => {});
+      return;
+    }
     if (!TO_HOST.has(msg?.type)) return;
     try {
-      ensureNative().postMessage(msg);
+      ensureNative().postMessage(msg.type === "send" ? comAnexos(msg) : msg);
     } catch (e) {
       port.postMessage({ type: "host_down", error: String(e?.message || e) });
     }
   });
   port.postMessage({ type: "panel_ready" });
+  for (const a of avisosAnexo) if (Date.now() - a.quando < 15000) port.postMessage(a.msg);
+  avisosAnexo = [];
 });
 
 // ---------- Conexão com o servidor MCP ----------

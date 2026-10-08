@@ -41,9 +41,15 @@ function setOcupado(v) {
 
 // Tamanho da conversa (o que cada mensagem relê). Acima do limite, sugere continuar numa conversa nova.
 let tamanho = 0;
+// Aviso de conversa longa fechado no ✕: não volta naquela conversa (guardado, até 100 conversas).
+let longaDispensada = [];
+browser.storage.local.get("longaDispensada").then(({ longaDispensada: l }) => {
+  if (Array.isArray(l)) longaDispensada = l.filter((x) => typeof x === "string").slice(-100);
+  if (atual.sessionId && longaDispensada.includes(atual.sessionId)) $("longaAviso").hidden = true;
+}).catch(() => {});
 function mostrarTamanho(tokens, longa) {
   tamanho = Number.isFinite(tokens) ? tokens : 0;
-  $("longaAviso").hidden = !longa;
+  $("longaAviso").hidden = !longa || (!!atual.sessionId && longaDispensada.includes(atual.sessionId));
   $("longaTexto").textContent = longa ? `Conversa longa (~${Math.round(tamanho / 1000)}k tokens): cada mensagem relê tudo isso.` : "";
   if (!ocupado) setOcupado(false);
 }
@@ -97,10 +103,16 @@ function some(el) {
   return el;
 }
 
-function msgUsuario(texto) {
+function msgUsuario(texto, anexos = []) {
   const d = document.createElement("div");
   d.className = "msg user";
   d.textContent = texto;
+  for (const a of anexos) {
+    const l = document.createElement("div");
+    l.className = "m-anexo";
+    l.textContent = `📎 ${rotuloAnexo(a)}`;
+    d.append(l);
+  }
   d.append(botaoCopiar("copiar-msg", "Copiar", () => texto));
   return some(d);
 }
@@ -443,6 +455,7 @@ document.addEventListener("click", (ev) => {
   if (!menu.hidden && !menu.contains(ev.target) && !$("modeloBotao").contains(ev.target)) menu.hidden = true;
 });
 document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && esperandoApontar) enviar({ type: "apontar_cancelar" });
   if (ev.key === "Escape") $("modeloMenu").hidden = true;
 });
 
@@ -733,6 +746,11 @@ function receber(m) {
       atualizarUsoBotao();
       if (!$("usoQuadro").hidden) mostrarQuadroUso();
       break;
+    case "apontando":
+    case "anexo":
+    case "anexo_falhou":
+      receberAnexo(m);
+      break;
     case "error":
       erro(String(m.message ?? "erro"));
       setOcupado(false);
@@ -864,18 +882,94 @@ function perguntar(texto, detalhe, rotuloOk) {
   });
 }
 
+// ---------- Trechos apontados na página (seletor de elemento ou texto selecionado) ----------
+// O conteúdo fica no background; aqui só rótulo, tamanho e prévia. Na hora de mandar vão os ids.
+
+let anexosPendentes = []; // { id, tipo, host, rotulo, chars, cortado, previa }
+let esperandoApontar = false;
+let falhaApontar = "";
+let falhaTimer = null;
+const fmtChars = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(".", ",")}k caracteres` : `${n} caracteres`);
+const rotuloAnexo = (a) =>
+  `${a.tipo === "selecao" ? "Seleção" : a.rotulo || "Elemento"} · ${a.host} · ${fmtChars(a.chars)}${a.cortado ? " (cortado)" : ""}`;
+
+function etiqueta(classe, texto, titulo, aoFechar) {
+  const e = document.createElement("div");
+  e.className = `anexo ${classe}`;
+  const t = document.createElement("span");
+  t.textContent = texto;
+  e.title = titulo;
+  e.append(t);
+  if (aoFechar) {
+    const x = document.createElement("button");
+    x.textContent = "✕";
+    x.title = "Tirar";
+    x.addEventListener("click", aoFechar);
+    e.append(x);
+  }
+  return e;
+}
+
+function mostrarAnexos() {
+  const box = $("anexos");
+  box.replaceChildren();
+  if (esperandoApontar) {
+    box.append(etiqueta("esperando", "🎯 Escolha na página o que o Claude vai ler…", "Na página: roda ou ↑/↓ muda o elemento, clique ou Enter escolhe, Esc cancela",
+      () => enviar({ type: "apontar_cancelar" })));
+  }
+  for (const a of anexosPendentes) {
+    box.append(etiqueta("", `📎 ${rotuloAnexo(a)}`, a.previa || "", () => {
+      anexosPendentes = anexosPendentes.filter((x) => x.id !== a.id);
+      mostrarAnexos();
+    }));
+  }
+  if (falhaApontar) box.append(etiqueta("falhou", falhaApontar, "", null));
+  box.hidden = !box.childElementCount;
+}
+
+function receberAnexo(m) {
+  clearTimeout(falhaTimer);
+  falhaApontar = "";
+  if (m.type === "apontando") esperandoApontar = true;
+  else if (m.type === "anexo") {
+    esperandoApontar = false;
+    if (typeof m.id === "string" && !anexosPendentes.some((a) => a.id === m.id)) {
+      anexosPendentes = [...anexosPendentes, {
+        id: m.id, tipo: m.tipo === "selecao" ? "selecao" : "elemento", host: String(m.host || "").slice(0, 120),
+        rotulo: String(m.rotulo || "").slice(0, 80), chars: Number(m.chars) || 0, cortado: !!m.cortado, previa: String(m.previa || "").slice(0, 200),
+      }].slice(-5);
+    }
+    entrada.focus();
+  } else {
+    esperandoApontar = false;
+    if (!m.cancelado) {
+      falhaApontar = String(m.message || "Não deu pra pegar o trecho.").slice(0, 200);
+      falhaTimer = setTimeout(() => {
+        falhaApontar = "";
+        mostrarAnexos();
+      }, 7000);
+    }
+  }
+  mostrarAnexos();
+}
+$("btnApontar").addEventListener("click", () => enviar({ type: "apontar" }));
+
 // ---------- Eventos da interface ----------
 
 function mandar() {
-  const texto = entrada.value.trim();
-  if (!texto || ocupado) return;
+  const digitado = entrada.value.trim();
+  if ((!digitado && !anexosPendentes.length) || ocupado) return;
+  const anexos = anexosPendentes;
+  anexosPendentes = [];
+  mostrarAnexos();
+  const texto = digitado || (anexos.length > 1 ? "Lê esses trechos que eu apontei." : "Lê esse trecho que eu apontei.");
   entrada.value = "";
   ajustarAltura();
-  msgUsuario(texto);
+  msgUsuario(texto, anexos);
   bolha = null;
   setOcupado(true);
   status("enviando…");
-  enviar({ type: "send", sessionId: atual.sessionId, text: texto });
+  enviar({ type: "send", sessionId: atual.sessionId, text: texto, ...(anexos.length ? { anexos: anexos.map((a) => a.id) } : {}) });
 }
 
 function ajustarAltura() {
@@ -901,6 +995,12 @@ $("btnNova").addEventListener("click", () => {
   setHistorico(false);
   conversa.hidden = false;
   novaConversa();
+});
+$("longaFechar").addEventListener("click", () => {
+  $("longaAviso").hidden = true;
+  if (!atual.sessionId || longaDispensada.includes(atual.sessionId)) return;
+  longaDispensada = [...longaDispensada, atual.sessionId].slice(-100);
+  browser.storage.local.set({ longaDispensada }).catch(() => {});
 });
 $("btnContinuar").addEventListener("click", () => {
   if (ocupado) return;

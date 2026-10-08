@@ -134,6 +134,14 @@ Open a new Claude Code session after installing.
     long as it is the front tab. It reads only when your message depends on the page. Acting (click, type, navigate)
     still needs the tab shared plus a confirmation; blocked sites and the local network stay blocked; the lock after
     reading a page still applies.
+  - **Point at what it reads.** The target button in the input box (or *Apontar na página o que o Claude lê…* in the
+    icon menu) starts a picker like the browser's "Inspect": the element under the mouse is highlighted with its name
+    and size, the wheel or ↑/↓ moves to the enclosing or inner element, a click or Enter picks it, Esc cancels.
+    Right-click on a page: *Mandar este elemento pro Claude…* (starts at the clicked element) and, with text selected,
+    *Mandar a seleção pro Claude*. The snippet shows up as a chip above the input and goes with your next message. It
+    is read the same way as `read_page` (hidden text skipped, passwords masked, up to 40,000 characters), only on
+    allowed sites and in the top page (not inside iframes); only real clicks and keys count, so the page can't pick
+    for you. It goes in as untrusted content and marks the conversation as having read a page.
   - If the active tab's site isn't allowed, the panel shows *Permitir este site* (Firefox's permission prompt opens
     right there). If Claude tries to act on an active tab that isn't shared, the panel shows *Liberar esta aba*
     (share this tab).
@@ -155,7 +163,7 @@ Open a new Claude Code session after installing.
     moves after each message (`~/.config/claude-firefox/plano-calibracao.json`); reading the plan uses an experimental SDK API.
   - **Long conversations.** Above ~60k tokens the panel offers *Continuar em conversa nova*: it asks for a short
     summary and sends it with the first message of a clean conversation (which starts marked if the old one had read
-    a page). Only when you click.
+    a page). Only when you click. The notice has a ✕ that hides it for that conversation.
   - Approvals for both browser and computer actions appear as cards with buttons inside the conversation.
   - ☰ lists past conversations, where you can start a new one, open, rename or delete them.
   - The Claude process stays alive while you use it and exits after 15 minutes idle; the conversation is kept.

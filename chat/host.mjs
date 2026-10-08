@@ -198,6 +198,29 @@ export function blocoResumo(texto, de) {
   );
 }
 
+// Trecho que o usuário apontou na página (elemento escolhido ou texto selecionado), vindo da extensão. Só passa o que
+// tem forma certa; o texto vai entre os marcadores de conteúdo externo, como qualquer leitura de página.
+export function anexosValidos(lista) {
+  if (!Array.isArray(lista)) return [];
+  return lista.slice(0, 5).filter((a) => a && typeof a === "object" && typeof a.texto === "string" && a.texto.trim() &&
+    typeof a.host === "string" && HOST_RE.test(a.host)).map((a) => ({
+    tipo: a.tipo === "selecao" ? "selecao" : "elemento",
+    host: a.host,
+    url: typeof a.url === "string" ? a.url.slice(0, 2000) : "",
+    title: typeof a.title === "string" ? a.title.slice(0, 300) : "",
+    rotulo: typeof a.rotulo === "string" ? a.rotulo.replace(/[\u0000-\u001f<>]/g, " ").slice(0, 80) : "",
+    texto: a.texto.slice(0, 40000),
+    cortado: !!a.cortado,
+  }));
+}
+
+export function blocoAnexo(a) {
+  const oQue = a.tipo === "selecao" ? "texto que o usuário selecionou" : `elemento que o usuário apontou (${a.rotulo || "?"})`;
+  const corpo = `Página: ${a.title} | ${a.url}\n\n${a.texto}`;
+  return `<trecho-apontado>\nO usuário apontou na página o que quer que você leia: ${oQue}${a.cortado ? ", cortado em 40 mil caracteres" : ""}. ` +
+    `Use isto em vez de ler a página inteira.\n${untrusted(corpo, `${oQue} em ${a.host}`)}\n</trecho-apontado>`;
+}
+
 // Saída grande de comando ou de arquivo: a conversa recebe um resumo do modelo auxiliar e o caminho do arquivo
 // completo (a trava libera ler esse arquivo com Read). Arquivo lido com offset/limit pequeno passa inteiro.
 export const LIMITE_SAIDA_BASH = 8000;
@@ -803,7 +826,7 @@ export function main() {
     return { behavior: "deny", message: "O usuário negou no painel." };
   }
 
-  async function send(sessionId, text) {
+  async function send(sessionId, text, anexos = []) {
     if (typeof text !== "string" || !text.trim()) return;
     if (chat && chat.sessionId !== (sessionId || null) && !(chat.sessionId === null && !sessionId)) closeChat();
     if (chat?.busy) return post({ type: "error", message: "Espere o Claude terminar (ou clique em Parar)." });
@@ -832,6 +855,16 @@ export function main() {
         }
       }
     }
+    // Trecho apontado na página: conteúdo de página entrando, então a conversa fica marcada antes (se falhar, não manda).
+    if (anexos.length) {
+      try {
+        if (!(await waitPid(c))) throw new Error("o Claude Code não informou o PID");
+        c.mark.addHosts(anexos.map((a) => a.host));
+        c.mark.taint();
+      } catch (e) {
+        return post({ type: "error", message: `Não consegui marcar a conversa como contaminada (${e.message}); por segurança o trecho não foi mandado.` });
+      }
+    }
     clearTimeout(c.idle);
     c.busy = true;
     post({ type: "busy", value: true });
@@ -841,6 +874,7 @@ export function main() {
     const [aba, planoAntes] = await Promise.all([abaAtiva(c), lerPlano(c)]);
     c.planoAntes = planoAntes;
     if (aba) blocos.push({ type: "text", text: aba });
+    for (const a of anexos) blocos.push({ type: "text", text: blocoAnexo(a) });
     if (c.resumoInicial) {
       blocos.push({ type: "text", text: c.resumoInicial });
       c.resumoInicial = null;
@@ -1031,7 +1065,7 @@ export function main() {
           break;
         }
         case "send":
-          await send(msg.sessionId ? String(msg.sessionId) : null, msg.text);
+          await send(msg.sessionId ? String(msg.sessionId) : null, msg.text, anexosValidos(msg.anexos));
           break;
         case "interrupt":
           if (chat?.busy) {

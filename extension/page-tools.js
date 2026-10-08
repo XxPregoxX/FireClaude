@@ -231,6 +231,12 @@
   }
 
   function readPage({ filter = "all", maxChars = 40000 } = {}) {
+    return lerConteudo({ filter, maxChars });
+  }
+
+  // Leitura com os filtros de texto escondido. raiz: só aquele elemento (o que o usuário apontou); range: só o trecho
+  // selecionado (nó fora da seleção não entra; texto nas pontas é cortado onde a seleção começa e termina).
+  function lerConteudo({ filter = "all", maxChars = 40000, raiz = null, range = null } = {}) {
     const lines = [];
     let buf = [];
     let hidden = 0;
@@ -243,67 +249,74 @@
     };
 
     function walk(node) {
-      for (const child of node.childNodes) {
-        if (child.nodeType === Node.TEXT_NODE) {
-          const t = child.textContent;
-          if (t && t.trim()) buf.push(t);
-          continue;
+      for (const child of node.childNodes) visita(child);
+    }
+    function visita(child) {
+      if (range && !range.intersectsNode(child)) return;
+      if (child.nodeType === Node.TEXT_NODE) {
+        let t = child.textContent;
+        if (range) {
+          const fim = child === range.endContainer ? range.endOffset : t.length;
+          t = t.slice(child === range.startContainer ? range.startOffset : 0, fim);
         }
-        if (child.nodeType !== Node.ELEMENT_NODE) continue;
-        const el = child;
-        if (SKIP_TAGS.has(el.tagName.toUpperCase())) continue;
-        if (semCaixa(el)) {
-          // Link/botão sem caixa própria: entra na lista (com o endereço) e o conteúdo vem logo abaixo.
-          if (isInteractive(el) && isVisible(el)) {
-            flush();
-            lines.push(describe(el, { curto: true }));
-            walk(el);
-            flush();
-          } else {
-            walk(el);
-          }
-          continue;
-        }
-        if (!isVisible(el)) {
-          // Conta só texto escondido com conteúdo relevante (pra avisar), mas não lê.
-          if (clean(el.textContent).length > 20) hidden++;
-          continue;
-        }
-        if (el.tagName === "IFRAME") {
-          flush();
-          lines.push(`[iframe ${el.src || "(sem src)"}]`);
-          continue;
-        }
-        if (isInteractive(el)) {
-          flush();
-          const entra = entraNoInterativo(el);
-          lines.push(describe(el, { curto: entra }));
-          if (entra) {
-            walk(el.shadowRoot || el);
-            flush();
-          }
-          continue;
-        }
-        const h = /^H([1-6])$/.exec(el.tagName);
-        if (h) {
-          flush();
-          const t = clean(el.innerText);
-          if (t) lines.push(`${"#".repeat(+h[1])} ${t}`);
-          continue;
-        }
-        if (el.tagName === "IMG") {
-          const alt = clean(el.alt);
-          if (alt && filter === "all" && !IMG_DECORATIVA.test(alt)) buf.push(`[imagem: ${alt}]`);
-          continue;
-        }
-        const block = BLOCK_DISPLAY.test(getComputedStyle(el).display);
-        if (block) flush();
-        walk(el.shadowRoot || el);
-        if (block) flush();
+        if (t && t.trim()) buf.push(t);
+        return;
       }
+      if (child.nodeType !== Node.ELEMENT_NODE) return;
+      const el = child;
+      if (SKIP_TAGS.has(el.tagName.toUpperCase())) return;
+      if (semCaixa(el)) {
+        // Link/botão sem caixa própria: entra na lista (com o endereço) e o conteúdo vem logo abaixo.
+        if (isInteractive(el) && isVisible(el)) {
+          flush();
+          lines.push(describe(el, { curto: true }));
+          walk(el);
+          flush();
+        } else {
+          walk(el);
+        }
+        return;
+      }
+      if (!isVisible(el)) {
+        // Conta só texto escondido com conteúdo relevante (pra avisar), mas não lê.
+        if (clean(el.textContent).length > 20) hidden++;
+        return;
+      }
+      if (el.tagName === "IFRAME") {
+        flush();
+        lines.push(`[iframe ${el.src || "(sem src)"}]`);
+        return;
+      }
+      if (isInteractive(el)) {
+        flush();
+        const entra = entraNoInterativo(el);
+        lines.push(describe(el, { curto: entra }));
+        if (entra) {
+          walk(el.shadowRoot || el);
+          flush();
+        }
+        return;
+      }
+      const h = /^H([1-6])$/.exec(el.tagName);
+      if (h) {
+        flush();
+        const t = clean(el.innerText);
+        if (t) lines.push(`${"#".repeat(+h[1])} ${t}`);
+        return;
+      }
+      if (el.tagName === "IMG") {
+        const alt = clean(el.alt);
+        if (alt && filter === "all" && !IMG_DECORATIVA.test(alt)) buf.push(`[imagem: ${alt}]`);
+        return;
+      }
+      const block = BLOCK_DISPLAY.test(getComputedStyle(el).display);
+      if (block) flush();
+      walk(el.shadowRoot || el);
+      if (block) flush();
     }
 
-    walk(document.body || document.documentElement);
+    if (raiz) visita(raiz);
+    else walk(document.body || document.documentElement);
     flush();
 
     let text = enxugar(lines).join("\n");
@@ -726,8 +739,179 @@
     });
   }
 
+  // ---------- O usuário aponta o que o Claude lê (como o "inspecionar" do navegador) ----------
+  // Só eventos de verdade (isTrusted): a página não consegue escolher no lugar do usuário. A leitura é a mesma do
+  // read_page (texto escondido fica de fora, senha mascarada).
+
+  const LIMITE_APONTADO = 40000;
+  const rotuloDe = (el) => {
+    let r = el.tagName.toLowerCase();
+    if (el.id) r += `#${el.id}`.slice(0, 40);
+    const classes = typeof el.className === "string" ? el.className.trim().split(/\s+/).filter(Boolean).slice(0, 2) : [];
+    for (const c of classes) r += `.${c}`.slice(0, 30);
+    return clean(r).slice(0, 80);
+  };
+  const resultadoApontado = (tipo, rotulo, lido) => ({
+    tipo, rotulo, texto: lido.text, cortado: lido.truncated, escondidos: lido.hiddenBlocksSkipped, url: location.href, title: clean(document.title),
+  });
+
+  let apontando = null; // seleção em andamento (uma por página)
+
+  function selecionarElemento({ alvoMenu = null, seletorTeste = null } = {}) {
+    if (seletorTeste) {
+      const el = selectAll(seletorTeste)[0];
+      if (!el) throw new Error("Nada casa com o seletor.");
+      return resultadoApontado("elemento", rotuloDe(el), lerConteudo({ raiz: el, maxChars: LIMITE_APONTADO }));
+    }
+    apontando?.terminar({ cancelado: true });
+    return new Promise((resolve) => {
+      // Camada própria num shadow root fechado: a página não estiliza nem lê o destaque. Estilo pelo CSSOM (CSP da
+      // página não bloqueia) e sem receber eventos (pointer-events: none), pra o elemento embaixo ser o alvo.
+      const host = document.createElement("claude-apontar");
+      Object.assign(host.style, { all: "initial", position: "fixed", top: "0", left: "0", width: "0", height: "0", zIndex: "2147483647", pointerEvents: "none" });
+      const raiz = host.attachShadow({ mode: "closed" });
+      const caixa = document.createElement("div");
+      Object.assign(caixa.style, { position: "fixed", pointerEvents: "none", border: "2px solid #d97757", background: "rgba(217, 119, 87, .14)",
+        borderRadius: "3px", boxSizing: "border-box", display: "none" });
+      const etiqueta = document.createElement("div");
+      Object.assign(etiqueta.style, { position: "fixed", pointerEvents: "none", background: "#1f1e1d", color: "#fff", font: "12px/1.4 system-ui, sans-serif",
+        padding: "3px 7px", borderRadius: "5px", whiteSpace: "nowrap", display: "none", maxWidth: "80vw", overflow: "hidden", textOverflow: "ellipsis" });
+      const dica = document.createElement("div");
+      dica.textContent = "Escolha o que o Claude vai ler · roda ou ↑/↓: elemento de fora/de dentro · clique ou Enter escolhe · Esc cancela";
+      Object.assign(dica.style, { position: "fixed", left: "50%", bottom: "16px", transform: "translateX(-50%)", pointerEvents: "none", background: "#1f1e1d",
+        color: "#fff", font: "13px/1.4 system-ui, sans-serif", padding: "7px 12px", borderRadius: "8px", boxShadow: "0 4px 14px rgba(0,0,0,.3)",
+        maxWidth: "90vw", textAlign: "center" });
+      raiz.append(caixa, etiqueta, dica);
+      document.documentElement.append(host);
+
+      let atual = null; // elemento destacado
+      let base = null; // o que está embaixo do mouse
+      let pilha = []; // de onde veio ao subir pro elemento de fora (pra voltar)
+      const desenhar = () => {
+        if (!atual || !atual.isConnected) {
+          caixa.style.display = etiqueta.style.display = "none";
+          return;
+        }
+        const r = atual.getBoundingClientRect();
+        Object.assign(caixa.style, { display: "block", left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+        etiqueta.textContent = `${rotuloDe(atual)}  ${Math.round(r.width)}×${Math.round(r.height)}`;
+        const acima = r.top > 26;
+        Object.assign(etiqueta.style, { display: "block", left: `${Math.max(4, Math.min(r.left, innerWidth - 200))}px`,
+          top: `${acima ? r.top - 24 : Math.min(r.bottom + 4, innerHeight - 24)}px` });
+      };
+      const escolhivel = (el) => el && el.nodeType === Node.ELEMENT_NODE && el !== host && el !== document.documentElement;
+      const subir = () => {
+        const p = atual && pai(atual);
+        if (escolhivel(p)) {
+          pilha.push(atual);
+          atual = p;
+          desenhar();
+        }
+      };
+      const descer = () => {
+        if (pilha.length) {
+          atual = pilha.pop();
+          desenhar();
+        }
+      };
+      const engole = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation();
+      };
+      const handlers = {
+        mousemove(ev) {
+          if (!ev.isTrusted) return;
+          const alvo = ev.composedPath().find((n) => n.nodeType === Node.ELEMENT_NODE);
+          if (!escolhivel(alvo) || alvo === base) return;
+          base = atual = alvo;
+          pilha = [];
+          desenhar();
+        },
+        wheel(ev) {
+          if (!ev.isTrusted) return;
+          engole(ev);
+          if (ev.deltaY < 0) subir();
+          else if (ev.deltaY > 0) descer();
+        },
+        keydown(ev) {
+          if (!ev.isTrusted) return;
+          if (ev.key === "Escape") terminar({ cancelado: true });
+          else if (ev.key === "ArrowUp") subir();
+          else if (ev.key === "ArrowDown") descer();
+          else if (ev.key === "Enter" && atual) terminar({ el: atual });
+          else return;
+          engole(ev);
+        },
+        click(ev) {
+          if (!ev.isTrusted) return;
+          engole(ev);
+          if (atual) terminar({ el: atual });
+        },
+        // O clique não pode chegar na página (abrir link, focar campo): engole o resto da sequência também.
+        mousedown: (ev) => ev.isTrusted && engole(ev),
+        mouseup: (ev) => ev.isTrusted && engole(ev),
+        pointerdown: (ev) => ev.isTrusted && engole(ev),
+        pointerup: (ev) => ev.isTrusted && engole(ev),
+        auxclick: (ev) => ev.isTrusted && engole(ev),
+        contextmenu: (ev) => ev.isTrusted && engole(ev),
+        scroll: () => desenhar(),
+        resize: () => desenhar(),
+        pagehide: () => terminar({ cancelado: true }),
+      };
+      for (const [nome, fn] of Object.entries(handlers)) addEventListener(nome, fn, { capture: true, passive: false });
+
+      function terminar({ el = null, cancelado = false }) {
+        if (apontando !== controle) return;
+        apontando = null;
+        for (const [nome, fn] of Object.entries(handlers)) removeEventListener(nome, fn, { capture: true });
+        host.remove();
+        if (cancelado || !el) return resolve({ cancelado: true });
+        resolve(resultadoApontado("elemento", rotuloDe(el), lerConteudo({ raiz: el, maxChars: LIMITE_APONTADO })));
+      }
+      const controle = { terminar };
+      apontando = controle;
+
+      // Veio do menu de contexto (botão direito num elemento): já começa nele.
+      if (Number.isInteger(alvoMenu)) {
+        try {
+          const el = browser.menus.getTargetElement(alvoMenu);
+          if (escolhivel(el)) {
+            base = atual = el.nodeType === Node.ELEMENT_NODE ? el : el.parentElement;
+            desenhar();
+          }
+        } catch (_) {}
+      }
+    });
+  }
+
+  function cancelarSelecao() {
+    apontando?.terminar({ cancelado: true });
+    return true;
+  }
+
+  // Texto que o usuário selecionou na página. Campo de texto: a parte selecionada dele (senha nunca).
+  function lerSelecao() {
+    const ativo = document.activeElement;
+    if (ativo && (ativo.tagName === "TEXTAREA" || (ativo.tagName === "INPUT" && /^(text|search|url|email|tel|)$/i.test(ativo.type))) &&
+      ativo.selectionStart !== ativo.selectionEnd && isVisible(ativo)) {
+      const t = String(ativo.value).slice(ativo.selectionStart, ativo.selectionEnd).replace(SNEAKY, "");
+      return resultadoApontado("selecao", "seleção num campo", { text: t.slice(0, LIMITE_APONTADO), truncated: t.length > LIMITE_APONTADO, hiddenBlocksSkipped: 0 });
+    }
+    const sel = getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) throw new Error("Não tem texto selecionado na página.");
+    const range = sel.getRangeAt(0);
+    const anc = range.commonAncestorContainer;
+    // Ponto de partida é sempre um elemento, pra passar pelo filtro de escondido (a página pode criar uma seleção
+    // sozinha, dentro de texto escondido).
+    const raiz = anc.nodeType === Node.ELEMENT_NODE ? anc : anc.parentElement;
+    if (!raiz) throw new Error("Não tem texto selecionado na página.");
+    return resultadoApontado("selecao", "seleção", lerConteudo({ raiz, range, maxChars: LIMITE_APONTADO }));
+  }
+
   const TOOLS = {
     readPage, scroll, consoleLogs, inspect, submitPending, query, extrairTabela, extrairLinks, estadoFormulario, esperarPor, assentar,
+    selecionarElemento, cancelarSelecao, lerSelecao,
     click: guarded(click), type: guarded(type), pressKey: guarded((a) => pressKey(a)), selectOption: guarded(selectOption),
   };
   globalThis.__claudeTools = TOOLS;

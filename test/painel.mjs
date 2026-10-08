@@ -289,6 +289,55 @@ try {
   r = await resultado("click", { tabId: abaD, selector: "#q" });
   check("desmarcar 'Claude pode agir nesta aba' (menu do ícone): a aba deixa de estar liberada pra agir", r?.ok === false && r.code === "nao_liberada", JSON.stringify(r));
 
+  console.log("\n# Apontar na página o que o Claude lê (elemento ou seleção)");
+  id = ferramenta("tab_new", { url: LOJA + "apontar.html" });
+  pedido = await espera("panel", (m) => m.type === "confirm_request" && m.details.url === LOJA + "apontar.html");
+  fila.panel.push({ type: "confirm_answer", id: pedido?.id, decision: "once" });
+  r = await espera("host", (m) => m.type === "tool_result" && m.id === id);
+  const abaP = r?.result?.tabId;
+  const gancho = async (caminho) => {
+    respostaPopup = ["once"];
+    await call("tab_new", { url: LOJA + caminho });
+  };
+  let desdeP = recebido.panel.length;
+  const doPainel = (teste) => espera("panel", (m) => recebido.panel.indexOf(m) >= desdeP && teste(m));
+  await gancho(`__apontar?tab=${abaP}&sel=%23cartao`);
+  let anexo = await doPainel((m) => m.type === "anexo");
+  check("elemento escolhido: o painel recebe rótulo, site, tamanho e prévia (sem o texto escondido)",
+    anexo?.tipo === "elemento" && anexo.rotulo === "div#cartao.card.destaque" && anexo.host === "loja.teste" && anexo.chars > 20 &&
+    /texto-visivel-do-cartao/.test(anexo.previa) && !/segredo/.test(anexo.previa), JSON.stringify(anexo));
+  let desdeH = recebido.host.length;
+  fila.panel.push({ type: "send", text: "o que diz aí?", anexos: [anexo?.id, "id-inventado"] });
+  let envio = await espera("host", (m) => recebido.host.indexOf(m) >= desdeH && m.type === "send");
+  const a1 = envio?.anexos?.[0];
+  check("mandar: o conteúdo vai pro programa local junto da mensagem (id inventado não vira nada)", envio?.anexos?.length === 1 &&
+    a1.tipo === "elemento" && a1.host === "loja.teste" && /apontar\.html$/.test(a1.url) && /Cartão escolhido/.test(a1.texto), JSON.stringify(envio).slice(0, 400));
+  check("...só o elemento, sem o texto escondido (display:none, aria-hidden) e com a senha mascarada",
+    /texto-visivel-do-cartao/.test(a1?.texto) && !/texto-fora-do-cartao|segredo|senha-de-verdade/.test(a1?.texto), a1?.texto);
+  desdeH = recebido.host.length;
+  fila.panel.push({ type: "send", text: "de novo", anexos: [anexo?.id] });
+  envio = await espera("host", (m) => recebido.host.indexOf(m) >= desdeH && m.type === "send");
+  check("cada trecho vai uma vez só", envio?.anexos?.length === 0, JSON.stringify(envio));
+
+  desdeP = recebido.panel.length;
+  await gancho(`__selecionar?tab=${abaP}&sel=%23frase`);
+  anexo = await doPainel((m) => m.type === "anexo");
+  desdeH = recebido.host.length;
+  fila.panel.push({ type: "send", text: "e isso?", anexos: [anexo?.id] });
+  envio = await espera("host", (m) => recebido.host.indexOf(m) >= desdeH && m.type === "send");
+  const a2 = envio?.anexos?.[0];
+  check("seleção: só o trecho selecionado, sem o escondido dentro dele", anexo?.tipo === "selecao" && /começo da frase meio-selecionado fim da frase/.test(a2?.texto) &&
+    !/segredo|texto-fora|Cartão/.test(a2?.texto), JSON.stringify(a2));
+
+  desdeP = recebido.panel.length;
+  await gancho(`__apontar?tab=${abaP}&sel=%23vazio`);
+  let falha = await doPainel((m) => m.type === "anexo_falhou");
+  check("elemento só com texto escondido: avisa que não tem texto visível", /não tem texto visível/.test(falha?.message), JSON.stringify(falha));
+  desdeP = recebido.panel.length;
+  await gancho(`__apontar?tab=${abaB}&sel=body`);
+  falha = await doPainel((m) => m.type === "anexo_falhou" || m.type === "anexo");
+  check("site fora da lista: não lê, e diz pra permitir", falha?.type === "anexo_falhou" && /não está na lista de sites permitidos/.test(falha.message), JSON.stringify(falha));
+
   console.log("\n# Painel fechado");
   id = ferramenta("navigate", { tabId: tab, url: "http://permitido2.teste:8765/" });
   pedido = await espera("panel", (m) => m.type === "confirm_request" && m.details.kind === "outro");
